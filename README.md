@@ -769,10 +769,10 @@ DjangoDockerTemplate/
 │   └── entrypoint.prod.sh
 ├── nginx/
 │   ├── Dockerfile
-│   ├── nginx.conf
 │   ├── nginx.tmpl              # Template for nginx-proxy auto-config
-│   ├── custom.conf
+│   ├── custom.conf             # Custom proxy-wide configuration
 │   └── vhost.d/
+│       └── default             # Static/media files configuration
 ├── .env.dev
 ├── .env.staging                # Staging environment variables
 ├── .env.staging.db            # Staging database variables
@@ -812,6 +812,28 @@ docker-compose -f docker-compose.prod.yml up -d --build
 ## Advanced: Automatic SSL with Step CA, nginx-proxy, and acme-companion
 
 For automatic Nginx reverse proxy configuration and SSL certificate management using Step CA (private ACME server), nginx-proxy, and acme-companion.
+
+### Django Configuration for HTTPS Proxy
+
+First, to run the Django app behind an HTTPS proxy you'll need to add the `SECURE_PROXY_SSL_HEADER` setting to `settings.py`:
+
+```python
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+```
+
+In this tuple, when `X-Forwarded-Proto` is set to `https` the request is secure.
+
+You'll also need to update `CSRF_TRUSTED_ORIGINS` inside `settings.py`:
+
+```python
+CSRF_TRUSTED_ORIGINS = os.environ.get("CSRF_TRUSTED_ORIGINS").split(" ")
+```
+
+Add `CSRF_TRUSTED_ORIGINS` to your `.env.staging` and `.env.prod` files:
+
+```bash
+CSRF_TRUSTED_ORIGINS=https://yourdomain.com https://www.yourdomain.com
+```
 
 ### Step 22: Understanding the Architecture
 
@@ -894,6 +916,57 @@ docker-compose -f docker-compose.staging.yml exec web python manage.py createsup
 - HTTP: `http://yourdomain.com` (redirects to HTTPS)
 - HTTPS: `https://yourdomain.com`
 - Step CA UI: `https://localhost:9000`
+
+### Nginx Configuration for nginx-proxy
+
+Next, let's update the Nginx configuration in the "nginx" folder.
+
+First, add directory called `vhost.d`. Then, add a file called `default` inside that directory to serve static and media files:
+
+```nginx
+location /static/ {
+  alias /home/app/web/staticfiles/;
+  add_header Access-Control-Allow-Origin *;
+}
+
+location /media/ {
+  alias /home/app/web/mediafiles/;
+  add_header Access-Control-Allow-Origin *;
+}
+```
+
+Requests that match any of these patterns will be served from static or media folders. They won't be proxied to other containers. The web and nginx-proxy containers share the volumes in which the static and media files are located:
+
+```
+static_volume:/home/app/web/staticfiles
+media_volume:/home/app/web/mediafiles
+```
+
+Add a `custom.conf` file to the "nginx" folder to hold custom proxy-wide configuration:
+
+```nginx
+client_max_body_size 10M;
+```
+
+Update `nginx/Dockerfile`:
+
+```dockerfile
+FROM nginxproxy/nginx-proxy
+COPY vhost.d/default /etc/nginx/vhost.d/default
+COPY custom.conf /etc/nginx/conf.d/custom.conf
+```
+
+Remove `nginx.conf`.
+
+Your "nginx" directory should now look like this:
+
+```
+└── nginx
+    ├── Dockerfile
+    ├── custom.conf
+    └── vhost.d
+        └── default
+```
 
 ### Step 24: Production with Auto-SSL
 
