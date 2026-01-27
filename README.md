@@ -142,28 +142,37 @@ Now let's dockerize the application by creating a Dockerfile in the `hello_djang
 ```bash
 # Navigate to the hello_django directory (if not already there)
 cd hello_django
+touch Dockerfile
 ```
 
-Create a file named `Dockerfile` with the following content:
+Add the following content to the `Dockerfile` just created:
 
 ```dockerfile
-# Pull official base image
-FROM python:3.12-alpine
+FROM python:3.12.12-slim-trixie
 
-# Set work directory
-WORKDIR /app
+ENV APP_HOME=/usr/src/app
+RUN mkdir $APP_HOME
+WORKDIR $APP_HOME
 
-# Set environment variables
+
+# set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Install dependencies
-COPY requirements.txt /app/
-RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
+# install system dependencies
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends netcat-openbsd \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean \
+    && apt-get autoremove -y
 
-# Copy project
-COPY . /app/
+COPY ./requirements.txt .
+RUN pip install --upgrade pip \
+    && pip install -r requirements.txt
+
+# copy project
+COPY . .
+
 ```
 
 After creating the Dockerfile, your directory structure should look like this:
