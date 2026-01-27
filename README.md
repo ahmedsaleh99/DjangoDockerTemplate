@@ -9,7 +9,7 @@ A production-ready Django application template with Docker, PostgreSQL, Gunicorn
 - 🚀 **Gunicorn** - Python WSGI HTTP server for production
 - 🌐 **nginx-proxy** - Automated reverse proxy configuration
 - 🔒 **Step CA + acme-companion** - Private ACME server for automatic SSL/TLS certificates (no public domain required)
-- 🐍 **Python 3.11** - Latest stable Python with virtual environment support
+- 🐍 **Python 3.12** - Latest stable Python with virtual environment support
 - 🎯 **Multi-environment** - Separate configurations for development, staging, and production
 - 📁 **Static & Media Files** - Properly configured file handling
 - 🔧 **Environment Variables** - Secure configuration management
@@ -65,11 +65,11 @@ This section guides you through creating a Django project from scratch before co
 
 ```bash
 # Create a new directory for your project
-mkdir django_docker_project
-cd django_docker_project
+mkdir DjangoDockerTemplate # Our empty repo
+cd DjangoDockerTemplate
 
-# Create virtual environment with Python 3.11
-python3.11 -m venv venv
+# Create virtual environment with Python 3.12
+python3.12 -m venv venv
 
 # Activate the virtual environment
 # On Linux/Mac:
