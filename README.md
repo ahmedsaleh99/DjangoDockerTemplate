@@ -24,15 +24,12 @@ A production-ready Django application template with Docker, PostgreSQL, Gunicorn
 - Git
 
 ### Development Setup
+To Make a long story short clone the repo and let docker left the load.
 
 ```bash
 # Clone the repository
 git clone https://github.com/ahmedsaleh99/DjangoDockerTemplate.git
 cd DjangoDockerTemplate
-
-# Create Python virtual environment
-python3.11 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Build and start containers
 docker-compose up -d --build
@@ -60,6 +57,7 @@ docker-compose down -v
 ## From Scratch - Step by Step
 
 This section guides you through creating a Django project from scratch before containerizing it.
+Here we start with empty repo and move forward step by step toward the repo in its current state 
 
 ### Step 1: Create Virtual Environment
 
@@ -77,57 +75,57 @@ source venv/bin/activate
 
 # On Windows:
 # venv\Scripts\activate
+
+# install Django
+pip install django==5.2.10
 ```
 
-### Step 2: Create requirements.txt
 
-Create a `requirements.txt` file with Django 5:
-
-```txt
-Django==5.0
-psycopg2-binary==2.9.9
-gunicorn==21.2.0
-```
-
-Install the requirements:
-
-```bash
-pip install -r requirements.txt
-```
-
-### Step 3: Create Django Project
+### Step 2: Create Django Project
 
 Use django-admin to create a new project named `hello_django`:
 
 ```bash
-django-admin startproject hello_django .
+django-admin startproject hello_django
 ```
-
-**Note:** The `.` at the end creates the project in the current directory.
-
-### Step 4: Project Structure
-
 After creating the Django project, your directory structure should look like this:
 
 ```
-django_docker_project/
-├── venv/                    # Virtual environment (excluded from git)
-├── hello_django/            # Django project directory
-│   ├── __init__.py
-│   ├── asgi.py
-│   ├── settings.py         # Project settings
-│   ├── urls.py             # URL configuration
-│   └── wsgi.py             # WSGI configuration
-├── manage.py                # Django management script
-└── requirements.txt         # Python dependencies
+DjangoDockerTemplate/
+├── venv/                         # Virtual environment (do NOT commit to git)
+├── hello_django/                 # Django project root
+│   ├── manage.py                 # Django management script
+│   └── hello_django/             # Django project package
+│       ├── __init__.py
+│       ├── asgi.py
+│       ├── settings.py           # Project settings
+│       ├── urls.py               # URL configuration
+│       └── wsgi.py               # WSGI configuration
+└── requirements.txt              # Python dependencies
 ```
 
-### Step 5: Verify Installation
+### Step 3: Create requirements.txt
+
+Create a `requirements.txt` file with Django 5:
+
+```bash
+touch hello_django/requirements.txt
+```
+Add the following packages tp `` we will need it later when we dockerize the app.
+
+```txt
+django==5.2.10
+psycopg2-binary==2.9.11
+gunicorn==24.1.1
+```
+
+### Step 4: Verify Installation
 
 Test that Django is working correctly:
 
 ```bash
 # Run development server
+cd hello_django/
 python manage.py runserver
 
 # You should see:
