@@ -409,6 +409,97 @@ docker-compose exec nginx ls -la /etc/nginx/conf.d/
 docker-compose up -d --build nginx
 ```
 
+## nginx-proxy and Step CA Issues
+
+### nginx-proxy Not Detecting Container
+
+**Symptoms**: nginx-proxy doesn't create configuration for Django container
+
+**Solutions**:
+```bash
+# Check containers are on same network
+docker network inspect nginx-proxy
+
+# Verify environment variables
+docker inspect web | grep -E "VIRTUAL_HOST|VIRTUAL_PORT"
+
+# Check nginx-proxy logs
+docker logs nginx-proxy
+
+# Restart nginx-proxy to trigger detection
+docker restart nginx-proxy
+
+# Verify nginx configuration was created
+docker exec nginx-proxy cat /etc/nginx/conf.d/default.conf
+```
+
+### Step CA Connection Issues
+
+**Symptoms**: acme-companion can't connect to Step CA
+
+**Solutions**:
+```bash
+# Verify Step CA is running
+docker ps | grep step-ca
+
+# Check Step CA health
+docker exec step-ca step ca health
+
+# Test connection from acme-companion
+docker exec acme-companion curl -k https://step-ca:9000/health
+
+# Verify ACME endpoint
+docker exec step-ca curl -k https://localhost:9000/acme/acme/directory
+
+# Check network connectivity
+docker exec acme-companion ping step-ca
+```
+
+### Certificate Not Issued by acme-companion
+
+**Symptoms**: No certificate generated for domain
+
+**Solutions**:
+```bash
+# Check acme-companion logs
+docker logs acme-companion -f
+
+# Verify environment variables on web container
+docker exec web env | grep -E "LETSENCRYPT_HOST|LETSENCRYPT_EMAIL"
+
+# Check root certificate is accessible
+docker exec acme-companion ls -la /etc/nginx/certs/step-ca-root.crt
+
+# Verify ACME_CA_URI is set correctly
+docker exec acme-companion env | grep ACME_CA_URI
+
+# Restart acme-companion to retry
+docker restart acme-companion
+```
+
+### Root Certificate Trust Issues
+
+**Symptoms**: Browser shows certificate warning despite certificate being issued
+
+**Solutions**:
+```bash
+# Verify root certificate is correct
+docker exec step-ca step ca root
+
+# Export and install root certificate
+docker exec step-ca step ca root > step-ca-root.crt
+
+# Install on Linux
+sudo cp step-ca-root.crt /usr/local/share/ca-certificates/
+sudo update-ca-certificates
+
+# Install on macOS
+sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain step-ca-root.crt
+
+# Install on Windows
+certutil -addstore -f "ROOT" step-ca-root.crt
+```
+
 ## SSL/HTTPS Issues
 
 ### Mixed Content Warnings
@@ -441,18 +532,27 @@ grep -r "http://" templates/
 
 ### Certificate Not Found
 
-**Symptoms**: Nginx can't find SSL certificate
+**Symptoms**: nginx-proxy can't find SSL certificate
 
 **Solutions**:
 ```bash
-# Check certificate path
-docker-compose exec nginx ls -la /etc/letsencrypt/live/your_domain.com/
+# Check certificate path (with nginx-proxy and acme-companion)
+docker exec nginx-proxy ls -la /etc/nginx/certs/
 
-# Verify volume mounts
-docker-compose config | grep -A 5 "volumes"
+# Check for your domain certificate
+docker exec nginx-proxy ls -la /etc/nginx/certs/your_domain.com.*
 
-# Regenerate certificate
-docker-compose run --rm certbot certonly --webroot -w /var/www/certbot -d your_domain.com
+# View acme-companion logs
+docker logs acme-companion
+
+# Verify Step CA is accessible
+docker exec acme-companion curl -k https://step-ca:9000/health
+
+# Check root certificate is present
+docker exec nginx-proxy ls -la /etc/nginx/certs/step-ca-root.crt
+
+# Restart acme-companion to trigger certificate request
+docker restart acme-companion
 ```
 
 ### Certificate Expired
@@ -461,18 +561,20 @@ docker-compose run --rm certbot certonly --webroot -w /var/www/certbot -d your_d
 
 **Solutions**:
 ```bash
-# Check certificate expiry
-docker-compose exec nginx openssl x509 -in /etc/letsencrypt/live/your_domain.com/cert.pem -noout -dates
+# Check certificate expiry (with nginx-proxy)
+docker exec nginx-proxy openssl x509 -in /etc/nginx/certs/your_domain.com.crt -noout -dates
 
-# Renew certificate (automatic renewal should handle this)
-docker-compose run --rm certbot renew
+# acme-companion automatically renews certificates
+# Check renewal logs
+docker logs acme-companion
 
-# Force renewal only if necessary (be aware of Let's Encrypt rate limits)
-# Rate limit: 5 duplicate certificates per week
-# docker-compose run --rm certbot renew --force-renewal
+# Force renewal by restarting acme-companion
+docker restart acme-companion
 
-# Reload Nginx
-docker-compose exec nginx nginx -s reload
+# Wait for renewal (30-60 seconds)
+sleep 60
+
+# nginx-proxy automatically reloads when certificates change
 ```
 
 ## Performance Issues

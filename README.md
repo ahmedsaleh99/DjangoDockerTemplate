@@ -8,7 +8,7 @@ A production-ready Django application template with Docker, PostgreSQL, Gunicorn
 - 🗄️ **PostgreSQL** - Production-grade database
 - 🚀 **Gunicorn** - Production WSGI HTTP server
 - 🌐 **Nginx** - Reverse proxy and static file serving
-- 🔒 **SSL/HTTPS** - Let's Encrypt integration for secure connections
+- 🔒 **SSL/HTTPS** - Automatic SSL certificates using Step CA (private ACME server) with nginx-proxy and acme-companion
 - 📁 **Media & Static Files** - Properly configured file handling
 - 🔧 **Environment Variables** - Secure configuration management
 
@@ -41,7 +41,7 @@ See the [Production Deployment Guide](wiki/production-deployment.md) for detaile
 
 - 📖 [Development Setup](wiki/development-setup.md) - Complete development environment guide
 - 🚀 [Production Deployment](wiki/production-deployment.md) - Production setup with Gunicorn and Nginx
-- 🔒 [SSL/HTTPS Setup](wiki/ssl-setup.md) - Let's Encrypt SSL certificate configuration
+- 🔒 [SSL/HTTPS Setup](wiki/ssl-setup.md) - Step CA with nginx-proxy and acme-companion for automatic SSL
 - 🛠️ [Troubleshooting](wiki/troubleshooting.md) - Common issues and solutions
 - 💡 [Best Practices](wiki/best-practices.md) - Security and optimization tips
 
@@ -95,7 +95,9 @@ See the [Production Deployment Guide](wiki/production-deployment.md) for detaile
 - **Nginx** - High-performance web server and reverse proxy
 - **Docker** - Container platform
 - **Docker Compose** - Multi-container orchestration
-- **Let's Encrypt** - Free SSL/TLS certificates
+- **Step CA** - Private ACME server for internal SSL/TLS certificates
+- **nginx-proxy** - Automated Nginx reverse proxy configuration
+- **acme-companion** - Automatic SSL certificate provisioning and renewal
 
 ## Contributing
 
@@ -109,7 +111,11 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 This template is based on the excellent tutorials from [TestDriven.io](https://testdriven.io/):
 - [Dockerizing Django with Postgres, Gunicorn, and Nginx](https://testdriven.io/blog/dockerizing-django-with-postgres-gunicorn-and-nginx/)
-- [Securing Django with Let's Encrypt](https://testdriven.io/blog/django-lets-encrypt/)
+
+Additional tools integrated:
+- [Step CA](https://smallstep.com/docs/step-ca/) - Private ACME server for internal certificates
+- [nginx-proxy](https://github.com/nginx-proxy/nginx-proxy) - Automated Nginx reverse proxy
+- [acme-companion](https://github.com/nginx-proxy/acme-companion) - Automatic SSL certificate management
 
 ## Support
 

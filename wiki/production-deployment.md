@@ -1,6 +1,8 @@
 # Production Deployment Guide
 
-This guide covers deploying Django to production with Docker, PostgreSQL, Gunicorn, and Nginx.
+This guide covers deploying Django to production with Docker, PostgreSQL, Gunicorn, and automated SSL using nginx-proxy and acme-companion with Step CA.
+
+**Note:** This guide uses nginx-proxy for automatic Nginx configuration. For manual Nginx setup, refer to the traditional approach in the archived documentation.
 
 ## Table of Contents
 
@@ -17,11 +19,13 @@ This guide covers deploying Django to production with Docker, PostgreSQL, Gunico
 
 ## Prerequisites
 
-- A Linux server (Ubuntu 20.04+ recommended)
-- Domain name pointing to your server
+- A Linux server (Ubuntu 20.04+ recommended) or local development environment
+- Domain name or hostname (can be local like `myapp.local` when using Step CA)
 - Docker and Docker Compose installed
 - Basic knowledge of Linux command line
-- SSH access to your server
+- SSH access to your server (for remote deployment)
+
+**Note:** With Step CA, you don't need a public domain. See [SSL/HTTPS Setup](ssl-setup.md) for details on using private certificates.
 
 ## Production Architecture
 
@@ -768,6 +772,6 @@ docker stats
 
 ## Next Steps
 
-- [SSL/HTTPS Setup with Let's Encrypt](ssl-setup.md)
+- [SSL/HTTPS Setup with Step CA](ssl-setup.md) - Automated SSL with nginx-proxy and acme-companion
 - [Best Practices and Security](best-practices.md)
 - [Troubleshooting Guide](troubleshooting.md)

@@ -1,78 +1,261 @@
-# SSL/HTTPS Setup with Let's Encrypt
+# SSL/HTTPS Setup with Step CA, nginx-proxy, and acme-companion
 
-This guide covers setting up SSL/HTTPS for your Django application using Let's Encrypt and Certbot with Docker and Nginx.
+This guide covers setting up SSL/HTTPS for your Django application using Step CA as a private ACME server, with nginx-proxy for automatic reverse proxy configuration and acme-companion for automatic certificate management.
 
 ## Table of Contents
 
+- [Overview](#overview)
+- [Why Step CA Instead of Let's Encrypt](#why-step-ca-instead-of-lets-encrypt)
+- [Architecture](#architecture)
 - [Prerequisites](#prerequisites)
-- [Understanding SSL/TLS](#understanding-ssltls)
-- [Let's Encrypt Overview](#lets-encrypt-overview)
-- [Setup Methods](#setup-methods)
-- [Method 1: Using Certbot Docker Container](#method-1-using-certbot-docker-container)
-- [Method 2: Using Certbot Standalone](#method-2-using-certbot-standalone)
-- [Nginx SSL Configuration](#nginx-ssl-configuration)
-- [Auto-Renewal](#auto-renewal)
-- [Testing SSL Configuration](#testing-ssl-configuration)
+- [Step CA Setup](#step-ca-setup)
+- [nginx-proxy and acme-companion Setup](#nginx-proxy-and-acme-companion-setup)
+- [Django Application Configuration](#django-application-configuration)
+- [Complete Docker Compose Example](#complete-docker-compose-example)
+- [Certificate Management](#certificate-management)
 - [Troubleshooting](#troubleshooting)
+- [Security Best Practices](#security-best-practices)
+
+## Overview
+
+This setup uses:
+
+- **Step CA** - A private ACME server that issues certificates without requiring a public domain
+- **nginx-proxy** - Automatically configures Nginx reverse proxy for your containers
+- **acme-companion** - Automatically provisions and renews SSL certificates
+
+**Benefits:**
+- ✅ Works without a public domain name
+- ✅ Perfect for internal/private deployments
+- ✅ Fully automated certificate management
+- ✅ Zero manual Nginx configuration needed
+- ✅ Automatic certificate renewal
+- ✅ Compatible with ACME protocol
+
+## Why Step CA Instead of Let's Encrypt
+
+| Feature | Let's Encrypt | Step CA |
+|---------|---------------|---------|
+| **Public Domain Required** | ✅ Yes | ❌ No |
+| **Internal Networks** | ❌ No | ✅ Yes |
+| **Custom Domain Names** | ❌ No | ✅ Yes |
+| **Rate Limits** | ✅ Yes (50/week) | ❌ No limits |
+| **Certificate Lifetime** | 90 days | Configurable |
+| **DNS Challenge** | Required for wildcards | Not needed |
+| **Internet Access** | Required | Not required |
+| **Private CA** | No | ✅ Yes |
+
+**Use Step CA when:**
+- Deploying to private/internal networks
+- Working with custom domain names (e.g., `myapp.local`)
+- Don't have a public domain
+- Want full control over your PKI
+- Need certificates for development/staging environments
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────┐
+│         nginx-proxy Container               │
+│   - Automatic Nginx Configuration           │
+│   - Reverse Proxy (Port 80/443)            │
+│   - SSL Termination                         │
+└──────────────┬──────────────────────────────┘
+               │
+               │  ┌──────────────────────────┐
+               │  │  acme-companion          │
+               │  │  - Certificate Request   │
+               │  │  - Auto Renewal          │
+               └──┤  - ACME Protocol         │
+                  └────────┬─────────────────┘
+                           │
+                  ┌────────▼─────────────────┐
+                  │      Step CA             │
+                  │  - Private ACME Server   │
+                  │  - Certificate Authority │
+                  └──────────────────────────┘
+
+┌─────────────────────────────────────────────┐
+│   Django Application Container              │
+│   - Gunicorn (Port 8000)                    │
+│   - Environment Variables for proxy         │
+└──────────────────┬──────────────────────────┘
+                   │
+┌──────────────────▼──────────────────────────┐
+│          PostgreSQL Database                 │
+└─────────────────────────────────────────────┘
+```
 
 ## Prerequisites
 
-Before setting up SSL, ensure you have:
-
-- A registered domain name
-- DNS records pointing to your server's IP address
-- Port 80 and 443 open on your firewall
-- A working Django application with Nginx
 - Docker and Docker Compose installed
+- Basic understanding of Docker networking
+- A hostname/domain for your application (can be local, e.g., `myapp.local`)
 
-### Verify DNS Configuration
+## Step CA Setup
+
+### 1. Create Step CA Container
+
+Step CA will act as your private Certificate Authority.
+
+Create a directory for Step CA data:
 
 ```bash
-# Check if your domain points to your server
-nslookup your_domain.com
-
-# Or use dig
-dig your_domain.com +short
+mkdir -p step-ca
 ```
 
-The output should show your server's IP address.
+### 2. Initialize Step CA
 
-## Understanding SSL/TLS
-
-**SSL (Secure Sockets Layer)** and **TLS (Transport Layer Security)** encrypt data between client and server.
-
-Benefits:
-- 🔒 **Encrypted communication** - Protects sensitive data
-- ✅ **Authentication** - Verifies your website's identity
-- 🔍 **SEO boost** - Google favors HTTPS sites
-- 🛡️ **Browser trust** - Avoids "Not Secure" warnings
-- 📱 **Required for modern features** - Service Workers, HTTP/2, etc.
-
-## Let's Encrypt Overview
-
-**Let's Encrypt** is a free, automated, and open Certificate Authority.
-
-Key features:
-- ✅ Free SSL/TLS certificates
-- 🔄 Automated certificate issuance and renewal
-- 🌍 Trusted by all major browsers
-- ⏰ 90-day certificate validity (encourages automation)
-
-## Setup Methods
-
-We'll cover two methods:
-1. **Certbot Docker Container** (Recommended) - Fully containerized
-2. **Certbot Standalone** - Traditional approach
-
-## Method 1: Using Certbot Docker Container
-
-This method keeps everything containerized and is easier to manage.
-
-### Step 1: Update Docker Compose
-
-Update `docker-compose.prod.yml`:
+First, we'll initialize Step CA with a simple setup:
 
 ```yaml
+# docker-compose.step-ca.yml
+version: '3.8'
+
+services:
+  step-ca:
+    image: smallstep/step-ca:latest
+    container_name: step-ca
+    environment:
+      - DOCKER_STEPCA_INIT_NAME=My Private CA
+      - DOCKER_STEPCA_INIT_DNS_NAMES=step-ca,localhost
+      - DOCKER_STEPCA_INIT_PROVISIONER_NAME=acme
+      - DOCKER_STEPCA_INIT_ACME=true
+    volumes:
+      - step-ca-data:/home/step
+    networks:
+      - nginx-proxy
+    ports:
+      - "9000:9000"
+    restart: unless-stopped
+
+volumes:
+  step-ca-data:
+
+networks:
+  nginx-proxy:
+    name: nginx-proxy
+    driver: bridge
+```
+
+### 3. Start Step CA
+
+```bash
+docker-compose -f docker-compose.step-ca.yml up -d
+```
+
+### 4. Get Step CA Root Certificate
+
+The root certificate will be needed to trust your private CA:
+
+```bash
+# Get the root certificate
+docker exec step-ca step ca root > step-ca-root.crt
+
+# View certificate details
+openssl x509 -in step-ca-root.crt -text -noout
+```
+
+### 5. Configure ACME Provisioner
+
+Step CA should already have ACME enabled from initialization. Verify it:
+
+```bash
+docker exec step-ca step ca provisioner list
+```
+
+You should see an ACME provisioner. If not, add one:
+
+```bash
+docker exec step-ca step ca provisioner add acme --type ACME
+```
+
+## nginx-proxy and acme-companion Setup
+
+### 1. Create nginx-proxy Configuration
+
+The nginx-proxy container automatically configures Nginx based on environment variables in other containers.
+
+Create `docker-compose.proxy.yml`:
+
+```yaml
+version: '3.8'
+
+services:
+  nginx-proxy:
+    image: nginxproxy/nginx-proxy:latest
+    container_name: nginx-proxy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+      - nginx-certs:/etc/nginx/certs:ro
+      - nginx-vhost:/etc/nginx/vhost.d
+      - nginx-html:/usr/share/nginx/html
+      - nginx-dhparam:/etc/nginx/dhparam
+    labels:
+      - "com.github.nginx-proxy.nginx-proxy"
+    networks:
+      - nginx-proxy
+    restart: unless-stopped
+
+  acme-companion:
+    image: nginxproxy/acme-companion:latest
+    container_name: acme-companion
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - nginx-certs:/etc/nginx/certs:rw
+      - nginx-vhost:/etc/nginx/vhost.d
+      - nginx-html:/usr/share/nginx/html
+      - acme-state:/etc/acme.sh
+    environment:
+      - DEFAULT_EMAIL=admin@example.com
+      - NGINX_PROXY_CONTAINER=nginx-proxy
+      # Configure for Step CA
+      - ACME_CA_URI=https://step-ca:9000/acme/acme/directory
+      - CA_BUNDLE=/etc/nginx/certs/step-ca-root.crt
+    depends_on:
+      - nginx-proxy
+    networks:
+      - nginx-proxy
+    restart: unless-stopped
+
+volumes:
+  nginx-certs:
+  nginx-vhost:
+  nginx-html:
+  nginx-dhparam:
+  acme-state:
+
+networks:
+  nginx-proxy:
+    external: true
+```
+
+### 2. Add Root Certificate to acme-companion
+
+The acme-companion needs to trust your Step CA:
+
+```bash
+# Copy root certificate to nginx-certs volume
+docker run --rm -v nginx-certs:/certs -v $(pwd):/src alpine cp /src/step-ca-root.crt /certs/
+```
+
+### 3. Start nginx-proxy and acme-companion
+
+```bash
+docker-compose -f docker-compose.proxy.yml up -d
+```
+
+## Django Application Configuration
+
+### 1. Update Django Docker Compose
+
+Your Django application needs specific environment variables for nginx-proxy to detect and configure it:
+
+```yaml
+# docker-compose.yml
 version: '3.8'
 
 services:
@@ -88,8 +271,19 @@ services:
       - 8000
     env_file:
       - ./.env.prod
+    environment:
+      # nginx-proxy configuration
+      - VIRTUAL_HOST=myapp.local
+      - VIRTUAL_PORT=8000
+      # acme-companion configuration
+      - LETSENCRYPT_HOST=myapp.local
+      - LETSENCRYPT_EMAIL=admin@example.com
     depends_on:
       - db
+    networks:
+      - nginx-proxy
+      - backend
+    restart: unless-stopped
 
   db:
     image: postgres:15
@@ -97,613 +291,612 @@ services:
       - postgres_data:/var/lib/postgresql/data/
     env_file:
       - ./.env.prod.db
-
-  nginx:
-    build: ./nginx
-    volumes:
-      - static_volume:/home/app/web/staticfiles
-      - media_volume:/home/app/web/mediafiles
-      - certbot_conf:/etc/letsencrypt
-      - certbot_www:/var/www/certbot
-    ports:
-      - 80:80
-      - 443:443
-    depends_on:
-      - web
-    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
-
-  certbot:
-    image: certbot/certbot:latest
-    volumes:
-      - certbot_conf:/etc/letsencrypt
-      - certbot_www:/var/www/certbot
-    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    networks:
+      - backend
+    restart: unless-stopped
 
 volumes:
   postgres_data:
   static_volume:
   media_volume:
-  certbot_conf:
-  certbot_www:
+
+networks:
+  nginx-proxy:
+    external: true
+  backend:
+    driver: bridge
 ```
 
-**Key additions:**
-- `certbot_conf` volume for certificates
-- `certbot_www` volume for ACME challenge
-- `certbot` service for certificate management
-- Nginx reload command for certificate renewal
+### 2. Environment Variables Explained
 
-### Step 2: Initial Nginx Configuration
+| Variable | Purpose | Example |
+|----------|---------|---------|
+| `VIRTUAL_HOST` | Domain name for your app | `myapp.local` |
+| `VIRTUAL_PORT` | Internal port (Gunicorn) | `8000` |
+| `LETSENCRYPT_HOST` | Domain for certificate | `myapp.local` |
+| `LETSENCRYPT_EMAIL` | Admin email | `admin@example.com` |
 
-Create `nginx/nginx.conf` for initial setup:
+### 3. Multiple Domains
 
-```nginx
-upstream django {
-    server web:8000;
-}
-
-server {
-    listen 80;
-    server_name your_domain.com www.your_domain.com;
-
-    location /.well-known/acme-challenge/ {
-        root /var/www/certbot;
-    }
-
-    location / {
-        return 301 https://$host$request_uri;
-    }
-}
-
-server {
-    listen 443 ssl http2;
-    server_name your_domain.com www.your_domain.com;
-
-    ssl_certificate /etc/letsencrypt/live/your_domain.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/your_domain.com/privkey.pem;
-
-    include /etc/letsencrypt/options-ssl-nginx.conf;
-    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
-
-    location / {
-        proxy_pass http://django;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header Host $host;
-        proxy_redirect off;
-    }
-
-    location /static/ {
-        alias /home/app/web/staticfiles/;
-    }
-
-    location /media/ {
-        alias /home/app/web/mediafiles/;
-    }
-
-    client_max_body_size 100M;
-}
-```
-
-### Step 3: Initial Certificate Request
-
-Create `init-letsencrypt.sh` script:
-
-```bash
-#!/bin/bash
-
-# Check for docker-compose (legacy) or docker compose (modern)
-if ! [ -x "$(command -v docker-compose)" ] && ! command -v docker &> /dev/null; then
-  echo 'Error: docker-compose or docker compose is not installed.' >&2
-  exit 1
-fi
-
-# Use appropriate command
-if [ -x "$(command -v docker-compose)" ]; then
-  DOCKER_COMPOSE="docker-compose"
-else
-  DOCKER_COMPOSE="docker compose"
-fi
-
-domains=(your_domain.com www.your_domain.com)
-rsa_key_size=4096
-data_path="./certbot"
-email="your-email@example.com" # Adding a valid address is strongly recommended
-staging=0 # Set to 1 if you're testing your setup to avoid hitting request limits
-
-if [ -d "$data_path" ]; then
-  read -p "Existing data found for $domains. Continue and replace existing certificate? (y/N) " decision
-  if [ "$decision" != "Y" ] && [ "$decision" != "y" ]; then
-    exit
-  fi
-fi
-
-if [ ! -e "$data_path/conf/options-ssl-nginx.conf" ] || [ ! -e "$data_path/conf/ssl-dhparams.pem" ]; then
-  echo "### Downloading recommended TLS parameters ..."
-  mkdir -p "$data_path/conf"
-  curl -s https://raw.githubusercontent.com/certbot/certbot/master/certbot-nginx/certbot_nginx/_internal/tls_configs/options-ssl-nginx.conf > "$data_path/conf/options-ssl-nginx.conf"
-  curl -s https://raw.githubusercontent.com/certbot/certbot/master/certbot/certbot/ssl-dhparams.pem > "$data_path/conf/ssl-dhparams.pem"
-  echo
-fi
-
-echo "### Creating dummy certificate for $domains ..."
-path="/etc/letsencrypt/live/$domains"
-mkdir -p "$data_path/conf/live/$domains"
-docker-compose -f docker-compose.prod.yml run --rm --entrypoint "\
-  openssl req -x509 -nodes -newkey rsa:$rsa_key_size -days 1\
-    -keyout '$path/privkey.pem' \
-    -out '$path/fullchain.pem' \
-    -subj '/CN=localhost'" certbot
-echo
-
-echo "### Starting nginx ..."
-docker-compose -f docker-compose.prod.yml up --force-recreate -d nginx
-echo
-
-echo "### Deleting dummy certificate for $domains ..."
-docker-compose -f docker-compose.prod.yml run --rm --entrypoint "\
-  rm -Rf /etc/letsencrypt/live/$domains && \
-  rm -Rf /etc/letsencrypt/archive/$domains && \
-  rm -Rf /etc/letsencrypt/renewal/$domains.conf" certbot
-echo
-
-echo "### Requesting Let's Encrypt certificate for $domains ..."
-# Join $domains to -d args
-domain_args=""
-for domain in "${domains[@]}"; do
-  domain_args="$domain_args -d $domain"
-done
-
-# Select appropriate email arg
-case "$email" in
-  "") email_arg="--register-unsafely-without-email" ;;
-  *) email_arg="--email $email" ;;
-esac
-
-# Enable staging mode if needed
-if [ $staging != "0" ]; then staging_arg="--staging"; fi
-
-docker-compose -f docker-compose.prod.yml run --rm --entrypoint "\
-  certbot certonly --webroot -w /var/www/certbot \
-    $staging_arg \
-    $email_arg \
-    $domain_args \
-    --rsa-key-size $rsa_key_size \
-    --agree-tos \
-    --force-renewal" certbot
-echo
-
-echo "### Reloading nginx ..."
-docker-compose -f docker-compose.prod.yml exec nginx nginx -s reload
-```
-
-Make it executable:
-
-```bash
-chmod +x init-letsencrypt.sh
-```
-
-### Step 4: Run Initial Setup
-
-```bash
-# Edit the script with your domain and email
-nano init-letsencrypt.sh
-
-# Run the script
-sudo ./init-letsencrypt.sh
-```
-
-This script will:
-1. Download recommended TLS parameters
-2. Create a dummy certificate
-3. Start Nginx
-4. Delete the dummy certificate
-5. Request a real certificate from Let's Encrypt
-6. Reload Nginx
-
-### Step 5: Update Nginx Volume Mounts
-
-Ensure Nginx can access the certificates by updating volume mounts in `docker-compose.prod.yml` if needed.
-
-## Method 2: Using Certbot Standalone
-
-This method installs Certbot directly on the host system.
-
-### Step 1: Install Certbot
-
-```bash
-# Ubuntu/Debian
-sudo apt update
-sudo apt install certbot python3-certbot-nginx
-
-# CentOS/RHEL
-sudo yum install certbot python3-certbot-nginx
-```
-
-### Step 2: Stop Nginx
-
-```bash
-docker-compose -f docker-compose.prod.yml stop nginx
-```
-
-### Step 3: Request Certificate
-
-```bash
-sudo certbot certonly --standalone -d your_domain.com -d www.your_domain.com
-```
-
-Follow the prompts:
-- Enter your email address
-- Agree to Terms of Service
-- Choose whether to share email with EFF
-
-### Step 4: Copy Certificates to Docker
-
-```bash
-# Create certificate directory
-sudo mkdir -p /etc/letsencrypt
-
-# Certificates are stored in /etc/letsencrypt/live/your_domain.com/
-```
-
-### Step 5: Update Docker Compose
-
-Mount certificates in `docker-compose.prod.yml`:
+For multiple domains, use comma-separated values:
 
 ```yaml
-nginx:
-  build: ./nginx
-  volumes:
-    - static_volume:/home/app/web/staticfiles
-    - media_volume:/home/app/web/mediafiles
-    - /etc/letsencrypt:/etc/letsencrypt:ro
-  ports:
-    - 80:80
-    - 443:443
-  depends_on:
-    - web
+environment:
+  - VIRTUAL_HOST=myapp.local,www.myapp.local,app.myapp.local
+  - LETSENCRYPT_HOST=myapp.local,www.myapp.local,app.myapp.local
 ```
 
-### Step 6: Start Nginx
-
-```bash
-docker-compose -f docker-compose.prod.yml up -d nginx
-```
-
-## Nginx SSL Configuration
-
-### Complete SSL Configuration
-
-Here's a production-ready `nginx/nginx.conf` with SSL:
-
-```nginx
-upstream django {
-    server web:8000;
-}
-
-# Redirect HTTP to HTTPS
-server {
-    listen 80;
-    server_name your_domain.com www.your_domain.com;
-
-    location /.well-known/acme-challenge/ {
-        root /var/www/certbot;
-    }
-
-    location / {
-        return 301 https://$host$request_uri;
-    }
-}
-
-# HTTPS Server
-server {
-    listen 443 ssl http2;
-    server_name your_domain.com www.your_domain.com;
-
-    # SSL Configuration
-    ssl_certificate /etc/letsencrypt/live/your_domain.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/your_domain.com/privkey.pem;
-    
-    # SSL Security Settings
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_prefer_server_ciphers off;
-    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
-    
-    # SSL Session Settings
-    ssl_session_timeout 1d;
-    ssl_session_cache shared:SSL:50m;
-    ssl_session_tickets off;
-    
-    # OCSP Stapling
-    ssl_stapling on;
-    ssl_stapling_verify on;
-    ssl_trusted_certificate /etc/letsencrypt/live/your_domain.com/chain.pem;
-    
-    # Security Headers
-    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-XSS-Protection "1; mode=block" always;
-    
-    # Proxy Settings
-    location / {
-        proxy_pass http://django;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header Host $host;
-        proxy_redirect off;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-
-    # Static Files
-    location /static/ {
-        alias /home/app/web/staticfiles/;
-        expires 30d;
-        add_header Cache-Control "public, immutable";
-    }
-
-    # Media Files
-    location /media/ {
-        alias /home/app/web/mediafiles/;
-    }
-
-    # File Upload Limit
-    client_max_body_size 100M;
-    
-    # Gzip Compression
-    gzip on;
-    gzip_vary on;
-    gzip_min_length 1024;
-    gzip_proxied any;
-    gzip_types text/plain text/css text/xml text/javascript application/x-javascript application/xml+rss application/json;
-    gzip_disable "MSIE [1-6]\.";
-}
-```
-
-### SSL Security Best Practices
-
-1. **Use Modern TLS Versions**: Only TLS 1.2 and 1.3
-2. **Strong Cipher Suites**: Prioritize modern, secure ciphers
-3. **HSTS**: Force HTTPS for all future visits
-4. **OCSP Stapling**: Improve SSL handshake performance
-5. **Security Headers**: Protect against common attacks
-
-## Auto-Renewal
-
-Let's Encrypt certificates expire after 90 days. Set up auto-renewal.
-
-### Method 1: Docker-based Auto-renewal
-
-Already configured in the Docker Compose setup above. The Certbot container runs renewal checks twice daily.
-
-Verify the renewal process:
-
-```bash
-docker-compose -f docker-compose.prod.yml run --rm certbot renew --dry-run
-```
-
-### Method 2: Cron-based Auto-renewal
-
-If using standalone Certbot:
-
-```bash
-# Edit crontab
-sudo crontab -e
-
-# Add this line to run twice daily
-0 0,12 * * * certbot renew --quiet --post-hook "docker-compose -f /path/to/docker-compose.prod.yml exec nginx nginx -s reload"
-```
-
-### Test Renewal
-
-```bash
-# Dry run (doesn't actually renew)
-sudo certbot renew --dry-run
-
-# Or with Docker
-docker-compose -f docker-compose.prod.yml run --rm certbot renew --dry-run
-```
-
-## Django HTTPS Settings
-
-Update `settings.py` for HTTPS:
+### 4. Update Django Settings
 
 ```python
-# HTTPS Settings (production only)
+# settings.py
+
+# HTTPS Settings
 if not DEBUG:
-    # Security settings
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
-    SECURE_HSTS_SECONDS = 31536000
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    SECURE_HSTS_PRELOAD = True
     
-    # Proxy settings
+    # Important: nginx-proxy handles SSL, Django sees HTTP
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
     
-    # Additional security headers
-    X_FRAME_OPTIONS = 'DENY'
+    # Trust nginx-proxy headers
+    USE_X_FORWARDED_HOST = True
+    USE_X_FORWARDED_PORT = True
+
+# Allowed hosts from environment
+ALLOWED_HOSTS = os.environ.get('DJANGO_ALLOWED_HOSTS', '').split(' ')
+
+# Add your domain
+ALLOWED_HOSTS += ['myapp.local', 'www.myapp.local']
 ```
 
-## Testing SSL Configuration
+## Complete Docker Compose Example
 
-### 1. SSL Labs Test
+For a complete setup, you can use a single docker-compose file or separate files:
 
-Visit [SSL Labs](https://www.ssllabs.com/ssltest/) and enter your domain. Aim for an A+ rating.
+### Option 1: Single File (Recommended for Development)
 
-### 2. Command Line Test
+```yaml
+# docker-compose.full.yml
+version: '3.8'
+
+services:
+  # Step CA
+  step-ca:
+    image: smallstep/step-ca:latest
+    environment:
+      - DOCKER_STEPCA_INIT_NAME=My Private CA
+      - DOCKER_STEPCA_INIT_DNS_NAMES=step-ca,localhost
+      - DOCKER_STEPCA_INIT_ACME=true
+    volumes:
+      - step-ca-data:/home/step
+    networks:
+      - nginx-proxy
+    ports:
+      - "9000:9000"
+    restart: unless-stopped
+
+  # nginx-proxy
+  nginx-proxy:
+    image: nginxproxy/nginx-proxy:latest
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+      - nginx-certs:/etc/nginx/certs:ro
+      - nginx-vhost:/etc/nginx/vhost.d
+      - nginx-html:/usr/share/nginx/html
+    networks:
+      - nginx-proxy
+    restart: unless-stopped
+
+  # acme-companion
+  acme-companion:
+    image: nginxproxy/acme-companion:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - nginx-certs:/etc/nginx/certs:rw
+      - nginx-vhost:/etc/nginx/vhost.d
+      - nginx-html:/usr/share/nginx/html
+      - acme-state:/etc/acme.sh
+    environment:
+      - DEFAULT_EMAIL=admin@example.com
+      - NGINX_PROXY_CONTAINER=nginx-proxy
+      - ACME_CA_URI=https://step-ca:9000/acme/acme/directory
+      - CA_BUNDLE=/etc/nginx/certs/step-ca-root.crt
+    depends_on:
+      - nginx-proxy
+    networks:
+      - nginx-proxy
+    restart: unless-stopped
+
+  # Django Application
+  web:
+    build:
+      context: ./app
+      dockerfile: Dockerfile.prod
+    command: gunicorn config.wsgi:application --bind 0.0.0.0:8000
+    volumes:
+      - static_volume:/home/app/web/staticfiles
+      - media_volume:/home/app/web/mediafiles
+    expose:
+      - 8000
+    env_file:
+      - ./.env.prod
+    environment:
+      - VIRTUAL_HOST=myapp.local
+      - VIRTUAL_PORT=8000
+      - LETSENCRYPT_HOST=myapp.local
+      - LETSENCRYPT_EMAIL=admin@example.com
+    depends_on:
+      - db
+      - step-ca
+    networks:
+      - nginx-proxy
+      - backend
+    restart: unless-stopped
+
+  # Database
+  db:
+    image: postgres:15
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    env_file:
+      - ./.env.prod.db
+    networks:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  step-ca-data:
+  nginx-certs:
+  nginx-vhost:
+  nginx-html:
+  acme-state:
+  postgres_data:
+  static_volume:
+  media_volume:
+
+networks:
+  nginx-proxy:
+    driver: bridge
+  backend:
+    driver: bridge
+```
+
+### Option 2: Separate Files (Recommended for Production)
+
+Keep infrastructure (Step CA, nginx-proxy) separate from application:
 
 ```bash
-# Check certificate
-openssl s_client -connect your_domain.com:443 -servername your_domain.com
+# Start infrastructure
+docker-compose -f docker-compose.step-ca.yml up -d
+docker-compose -f docker-compose.proxy.yml up -d
 
-# Check specific cipher
-openssl s_client -connect your_domain.com:443 -tls1_2
-
-# Verify certificate chain
-curl -vI https://your_domain.com
+# Start application
+docker-compose -f docker-compose.yml up -d
 ```
 
-### 3. Browser Test
+## Deployment Steps
 
-1. Visit `https://your_domain.com`
-2. Click the padlock icon
-3. Verify certificate details
-4. Check for any mixed content warnings
+### 1. Set Up DNS/Hosts File
 
-### 4. Security Headers Test
+For local development, add to `/etc/hosts` (Linux/Mac) or `C:\Windows\System32\drivers\etc\hosts` (Windows):
 
-Visit [Security Headers](https://securityheaders.com/) and check your domain.
+```
+127.0.0.1   myapp.local
+```
+
+For production, configure your DNS to point to your server's IP.
+
+### 2. Initialize Step CA
+
+```bash
+# Create network
+docker network create nginx-proxy
+
+# Start Step CA
+docker-compose -f docker-compose.step-ca.yml up -d
+
+# Wait for initialization
+sleep 10
+
+# Get root certificate
+docker exec step-ca step ca root > step-ca-root.crt
+```
+
+### 3. Configure Trust (Optional for Browsers)
+
+To avoid browser warnings, add the root certificate to your system's trust store:
+
+**Linux:**
+```bash
+sudo cp step-ca-root.crt /usr/local/share/ca-certificates/
+sudo update-ca-certificates
+```
+
+**macOS:**
+```bash
+sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain step-ca-root.crt
+```
+
+**Windows:**
+```powershell
+certutil -addstore -f "ROOT" step-ca-root.crt
+```
+
+### 4. Copy Root Certificate to nginx-certs
+
+```bash
+docker run --rm -v nginx-certs:/certs -v $(pwd):/src alpine cp /src/step-ca-root.crt /certs/
+```
+
+### 5. Start nginx-proxy and acme-companion
+
+```bash
+docker-compose -f docker-compose.proxy.yml up -d
+```
+
+### 6. Start Django Application
+
+```bash
+# Run migrations
+docker-compose -f docker-compose.yml run --rm web python manage.py migrate
+
+# Collect static files
+docker-compose -f docker-compose.yml run --rm web python manage.py collectstatic --no-input
+
+# Start application
+docker-compose -f docker-compose.yml up -d
+```
+
+### 7. Verify Certificate
+
+```bash
+# Wait for certificate issuance (30-60 seconds)
+sleep 60
+
+# Check certificate
+docker exec nginx-proxy ls -la /etc/nginx/certs/
+
+# Verify HTTPS
+curl -v https://myapp.local
+```
 
 ## Certificate Management
 
-### View Certificate Details
+### Viewing Certificates
 
 ```bash
-# Using Docker
-docker-compose -f docker-compose.prod.yml run --rm certbot certificates
+# List certificates
+docker exec nginx-proxy ls -la /etc/nginx/certs/
 
-# Or directly
-sudo certbot certificates
+# View certificate details
+docker exec nginx-proxy openssl x509 -in /etc/nginx/certs/myapp.local.crt -text -noout
 ```
 
-### Manual Renewal
+### Certificate Renewal
+
+acme-companion automatically renews certificates. Check renewal logs:
 
 ```bash
-# Force renewal (Docker)
-docker-compose -f docker-compose.prod.yml run --rm certbot renew --force-renewal
+# View acme-companion logs
+docker logs acme-companion -f
 
-# Standalone
-sudo certbot renew --force-renewal
+# Force renewal (for testing)
+docker restart acme-companion
 ```
 
-### Revoke Certificate
+### Certificate Lifetime
+
+Step CA certificates have a default lifetime. To check:
 
 ```bash
-# If you need to revoke (security breach, etc.)
-docker-compose -f docker-compose.prod.yml run --rm certbot revoke --cert-path /etc/letsencrypt/live/your_domain.com/cert.pem
+docker exec step-ca step ca provisioner list
+```
+
+To change certificate lifetime:
+
+```bash
+# Set to 365 days
+docker exec step-ca step ca provisioner update acme --x509-default-dur 8760h
 ```
 
 ## Troubleshooting
 
-### Certificate Request Failed
+### Certificate Not Issued
 
-**Problem**: "Failed to obtain certificate"
+**Problem:** Certificate not appearing in `/etc/nginx/certs/`
 
-**Solutions**:
+**Solutions:**
+
+1. Check acme-companion logs:
 ```bash
-# Check DNS
-dig your_domain.com +short
-
-# Check if port 80 is accessible
-curl http://your_domain.com/.well-known/acme-challenge/test
-
-# Check Nginx logs
-docker-compose -f docker-compose.prod.yml logs nginx
-
-# Try with verbose output
-docker-compose -f docker-compose.prod.yml run --rm certbot certonly --webroot -w /var/www/certbot -d your_domain.com --verbose
+docker logs acme-companion
 ```
 
-### Mixed Content Warnings
-
-**Problem**: HTTPS site loading HTTP resources
-
-**Solutions**:
-1. Update all URLs to use HTTPS
-2. Use protocol-relative URLs: `//example.com/script.js`
-3. Check Django settings: `SECURE_SSL_REDIRECT = True`
-
-### Nginx Won't Start with SSL
-
-**Problem**: "Certificate file not found"
-
-**Solutions**:
+2. Verify Step CA is accessible:
 ```bash
-# Check certificate path
-docker-compose -f docker-compose.prod.yml exec nginx ls -la /etc/letsencrypt/live/
-
-# Verify certificate permissions
-docker-compose -f docker-compose.prod.yml exec nginx cat /etc/letsencrypt/live/your_domain.com/fullchain.pem
-
-# Check Nginx configuration
-docker-compose -f docker-compose.prod.yml exec nginx nginx -t
+docker exec acme-companion curl -k https://step-ca:9000/health
 ```
 
-### Rate Limits
-
-Let's Encrypt has rate limits:
-- 50 certificates per registered domain per week
-- 5 duplicate certificates per week
-
-**Solution**: Use staging environment for testing:
+3. Check environment variables:
 ```bash
-# Add --staging flag
-docker-compose -f docker-compose.prod.yml run --rm certbot certonly --webroot -w /var/www/certbot -d your_domain.com --staging
+docker exec web env | grep -E "VIRTUAL|LETSENCRYPT"
 ```
 
-### Auto-renewal Not Working
-
-**Problem**: Certificates expiring
-
-**Solutions**:
+4. Verify root certificate is present:
 ```bash
-# Test renewal
-docker-compose -f docker-compose.prod.yml run --rm certbot renew --dry-run
-
-# Check Certbot container logs
-docker-compose -f docker-compose.prod.yml logs certbot
-
-# Manually renew
-docker-compose -f docker-compose.prod.yml run --rm certbot renew --force-renewal
-
-# Restart Nginx
-docker-compose -f docker-compose.prod.yml exec nginx nginx -s reload
+docker exec acme-companion ls -la /etc/nginx/certs/step-ca-root.crt
 ```
 
-## Wildcard Certificates
+### Connection Refused
 
-For subdomains (`*.your_domain.com`):
+**Problem:** Cannot access application via HTTPS
+
+**Solutions:**
+
+1. Check nginx-proxy is running:
+```bash
+docker ps | grep nginx-proxy
+```
+
+2. Verify port mappings:
+```bash
+docker port nginx-proxy
+```
+
+3. Check nginx configuration:
+```bash
+docker exec nginx-proxy cat /etc/nginx/conf.d/default.conf
+```
+
+### Certificate Not Trusted
+
+**Problem:** Browser shows certificate warning
+
+**Solutions:**
+
+1. Install root certificate in system trust store (see deployment steps above)
+
+2. For development, you can accept the self-signed certificate warning
+
+3. Verify certificate chain:
+```bash
+openssl s_client -connect myapp.local:443 -CAfile step-ca-root.crt
+```
+
+### ACME Challenge Failed
+
+**Problem:** acme-companion cannot complete ACME challenge
+
+**Solutions:**
+
+1. Check Step CA ACME endpoint:
+```bash
+docker exec step-ca curl -k https://localhost:9000/acme/acme/directory
+```
+
+2. Verify network connectivity:
+```bash
+docker exec acme-companion ping step-ca
+```
+
+3. Check CA bundle configuration:
+```bash
+docker exec acme-companion env | grep CA_BUNDLE
+```
+
+### nginx-proxy Not Detecting Container
+
+**Problem:** nginx-proxy doesn't configure proxy for Django app
+
+**Solutions:**
+
+1. Ensure containers are on same network:
+```bash
+docker network inspect nginx-proxy
+```
+
+2. Check environment variables are set:
+```bash
+docker inspect web | grep -A 10 Env
+```
+
+3. Restart nginx-proxy:
+```bash
+docker restart nginx-proxy
+```
+
+## Advanced Configuration
+
+### Custom Nginx Configuration
+
+Create custom configuration for your application:
 
 ```bash
-docker-compose -f docker-compose.prod.yml run --rm certbot certonly \
-  --manual \
-  --preferred-challenges=dns \
-  --email your-email@example.com \
-  --server https://acme-v02.api.letsencrypt.org/directory \
-  --agree-tos \
-  -d your_domain.com \
-  -d *.your_domain.com
+# Create vhost config directory
+mkdir -p nginx-vhost.d
 ```
 
-This requires DNS verification (adding TXT records).
+Create `nginx-vhost.d/myapp.local`:
 
-## Additional Security
+```nginx
+# Custom configuration for myapp.local
+client_max_body_size 100M;
 
-### 1. Certificate Transparency Monitoring
+# Custom headers
+add_header X-Custom-Header "My Value" always;
 
-Monitor your certificates at:
-- [crt.sh](https://crt.sh/)
-- [Certificate Transparency Search](https://transparencyreport.google.com/https/certificates)
-
-### 2. HSTS Preload
-
-Submit your domain to [HSTS Preload List](https://hstspreload.org/)
-
-### 3. CAA Records
-
-Add CAA DNS records to restrict which CAs can issue certificates:
-
+# Location-specific settings
+location /static/ {
+    expires 30d;
+    add_header Cache-Control "public, immutable";
+}
 ```
-your_domain.com. CAA 0 issue "letsencrypt.org"
-your_domain.com. CAA 0 issuewild "letsencrypt.org"
+
+Mount in nginx-proxy:
+
+```yaml
+nginx-proxy:
+  volumes:
+    - ./nginx-vhost.d:/etc/nginx/vhost.d:ro
 ```
+
+### Static File Serving via nginx-proxy
+
+To serve static files directly through nginx-proxy:
+
+```yaml
+web:
+  volumes:
+    - static_volume:/app/staticfiles:ro
+    - media_volume:/app/mediafiles:ro
+  environment:
+    - VIRTUAL_HOST=myapp.local
+    - VIRTUAL_PORT=8000
+    - LETSENCRYPT_HOST=myapp.local
+```
+
+Then create `nginx-vhost.d/myapp.local_location`:
+
+```nginx
+location /static/ {
+    alias /app/staticfiles/;
+}
+
+location /media/ {
+    alias /app/mediafiles/;
+}
+```
+
+### Multiple Applications
+
+Run multiple Django applications behind the same nginx-proxy:
+
+```yaml
+services:
+  app1:
+    environment:
+      - VIRTUAL_HOST=app1.local
+      - LETSENCRYPT_HOST=app1.local
+
+  app2:
+    environment:
+      - VIRTUAL_HOST=app2.local
+      - LETSENCRYPT_HOST=app2.local
+```
+
+Each will get its own certificate automatically.
+
+### Wildcard Certificates
+
+For wildcard certificates (e.g., `*.myapp.local`):
+
+```yaml
+web:
+  environment:
+    - VIRTUAL_HOST=*.myapp.local
+    - LETSENCRYPT_HOST=*.myapp.local
+```
+
+**Note:** Step CA supports wildcards without DNS challenge, unlike Let's Encrypt.
+
+## Security Best Practices
+
+### 1. Secure Step CA
+
+```bash
+# Use strong passwords for Step CA
+# Set password during initialization or update it
+docker exec -it step-ca step ca provisioner update acme --password-file /path/to/password
+```
+
+### 2. Network Isolation
+
+```yaml
+# Keep Step CA in separate network from public
+networks:
+  nginx-proxy:
+    driver: bridge
+  step-ca-internal:
+    driver: bridge
+    internal: true
+```
+
+### 3. Restrict Access to Step CA
+
+```yaml
+step-ca:
+  # Don't expose port 9000 publicly
+  # Only expose to nginx-proxy network
+  expose:
+    - 9000
+  # Remove public port mapping
+  # ports:
+  #   - "9000:9000"
+```
+
+### 4. Regular Updates
+
+```bash
+# Update containers regularly
+docker-compose pull
+docker-compose up -d
+```
+
+### 5. Monitor Logs
+
+```bash
+# Set up log aggregation
+docker-compose logs -f > application.log &
+
+# Or use log driver
+services:
+  web:
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+```
+
+### 6. Backup Certificates and CA Data
+
+```bash
+# Backup Step CA data
+docker run --rm -v step-ca-data:/data -v $(pwd):/backup alpine tar czf /backup/step-ca-backup.tar.gz -C /data .
+
+# Backup certificates
+docker run --rm -v nginx-certs:/data -v $(pwd):/backup alpine tar czf /backup/certs-backup.tar.gz -C /data .
+```
+
+## Comparison with Let's Encrypt Setup
+
+| Aspect | Let's Encrypt | Step CA + nginx-proxy |
+|--------|---------------|----------------------|
+| Setup Complexity | Medium | Medium |
+| Public Domain Required | Yes | No |
+| Works Offline | No | Yes |
+| Auto Configuration | Manual Nginx | Automatic |
+| Certificate Renewal | Manual/Cron | Automatic |
+| Internal Networks | No | Yes |
+| Rate Limits | Yes | No |
+| Browser Trust | Automatic | Manual (one-time) |
 
 ## Next Steps
 
 - [Best Practices and Security](best-practices.md)
 - [Troubleshooting Guide](troubleshooting.md)
 - [Production Deployment](production-deployment.md)
+
+## Resources
+
+- [Step CA Documentation](https://smallstep.com/docs/step-ca/)
+- [nginx-proxy Documentation](https://github.com/nginx-proxy/nginx-proxy)
+- [acme-companion Documentation](https://github.com/nginx-proxy/acme-companion)
+- [ACME Protocol](https://datatracker.ietf.org/doc/html/rfc8555)
