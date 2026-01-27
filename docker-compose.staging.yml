@@ -1,0 +1,93 @@
+
+services:
+
+  web:
+    build:
+      context: ./app
+      dockerfile: Dockerfile.prod
+    command: gunicorn hello_django.wsgi:application --bind 0.0.0.0:8000
+    volumes:
+      - static_volume:/home/app/web/staticfiles
+      - media_volume:/home/app/web/mediafiles
+    expose:
+      - 8000
+    env_file:
+      - ./.env.staging
+    depends_on:
+      - db
+  
+  db:
+    image: postgres:18.1-trixie
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    env_file:
+      - ./.env.staging.db
+    
+    healthcheck: # (optional) healthcheck
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    
+
+  nginx-proxy:
+    container_name: nginx-proxy
+    build: nginx
+    restart: always
+    ports:
+      - 443:443
+      - 80:80
+    volumes:
+      - static_volume:/home/app/web/staticfiles
+      - media_volume:/home/app/web/mediafiles
+      - certs:/etc/nginx/certs
+      - html:/usr/share/nginx/html
+      - vhost:/etc/nginx/vhost.d
+      - conf:/etc/nginx/conf.d
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+    depends_on:
+      - web
+
+  step-ca:
+    image: smallstep/step-ca:latest
+    container_name: step-ca
+    restart: always
+    environment:
+      - DOCKER_STEPCA_INIT_NAME=Smallstep
+      - DOCKER_STEPCA_INIT_DNS_NAMES=localhost,step-ca
+      - DOCKER_STEPCA_INIT_REMOTE_MANAGEMENT=true
+      - DOCKER_STEPCA_INIT_ACME=true
+    volumes:
+      - step_data:/home/step
+    ports:
+      - "9000:9000"
+
+  acme-companion:
+    image: nginxproxy/acme-companion
+    environment:
+      - NGINX_PROXY_CONTAINER=nginx-proxy
+      - DEFAULT_EMAIL=test@test.com
+      - ACME_CA_URI=https://step-ca:9000/acme/acme/directory
+      - CA_BUNDLE=/home/step/certs/root_ca.crt
+      # - CREATE_DEFAULT_CERTIFICATE=true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - certs:/etc/nginx/certs
+      - html:/usr/share/nginx/html
+      - vhost:/etc/nginx/vhost.d
+      - acme:/etc/acme.sh
+      - step_data:/home/step:ro
+    depends_on:
+      - nginx-proxy
+      - step-ca
+
+volumes:
+  step_data:
+  postgres_data:
+  static_volume:
+  media_volume:
+  certs:
+  html:
+  vhost:
+  conf:
+  acme:

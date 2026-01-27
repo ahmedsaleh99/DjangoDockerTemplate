@@ -735,14 +735,14 @@ Build and run the production stack:
 docker-compose -f docker-compose.prod.yml up -d --build
 ```
 
-Here are two usefull  migrations and collect static files:
+Here are two usefull  manual migrations and collect static files:
 
 ```bash
 docker-compose -f docker-compose.prod.yml exec web python manage.py migrate --noinput
 docker-compose -f docker-compose.prod.yml exec web python manage.py collectstatic --no-input --clear
 ```
 
-Create superuser:
+Create superuser for the first time on production:
 
 ```bash
 docker-compose -f docker-compose.prod.yml exec web python manage.py createsuperuser
@@ -750,7 +750,7 @@ docker-compose -f docker-compose.prod.yml exec web python manage.py createsuperu
 
 Access the application at `http://localhost:1337`
 
-### Step 21: Project Structure (Final)
+### Step 21: Project Structure
 
 ```
 DjangoDockerTemplate/
@@ -812,6 +812,10 @@ MIT
 This template is based on best practices from:
 - [TestDriven.io - Dockerizing Django with Postgres, Gunicorn, and Nginx](https://testdriven.io/blog/dockerizing-django-with-postgres-gunicorn-and-nginx/)
 - [TestDriven.io - Django with Let's Encrypt](https://testdriven.io/blog/django-lets-encrypt/)
+- [TestDriven.io - Docker Best Practices for Python Developers](https://testdriven.io/blog/docker-best-practices/)
+- [SmallStep - Run your own private CA & ACME server using step-ca](https://smallstep.com/blog/private-acme-server/)
+- [Jason Wilder - Automated Nginx Reverse Proxy for Docker](http://jasonwilder.com/blog/2014/03/25/automated-nginx-reverse-proxy-for-docker/)
+
 
 Adapted to use:
 - Python 3.12
