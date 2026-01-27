@@ -10,7 +10,7 @@ services:
     expose:
       - 8000
     env_file:
-      - ./.env.prod
+      - ./.env..env.prod
     depends_on:
       - db
   
@@ -26,19 +26,81 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-    
-  
-  nginx:
+
+
+  nginx-proxy:
+    container_name: nginx-proxy
     build: ./nginx
-    volumes:
-      - static_volume:/home/app/web/staticfiles
-      - media_volume:/home/app/web/mediafiles
+    restart: always
     ports:
-      - 1337:80
+      - "80:80"
+      - "443:443"
+    volumes_from:
+      - web
+    volumes:
+      - vhost:/etc/nginx/vhost.d
+      - conf:/etc/nginx/conf.d
+      - html:/usr/share/nginx/html
+      - certs:/etc/nginx/certs:ro
     depends_on:
       - web
 
+  docker-gen:
+    image: nginxproxy/docker-gen
+    container_name: nginx-proxy-gen
+    command: -notify-sighup nginx-proxy -watch -wait 5s:30s /etc/docker-gen/templates/nginx.tmpl /etc/nginx/conf.d/default.conf
+    volumes_from:
+      - nginx-proxy
+    volumes:
+      - ./nginx/nginx.tmpl:/etc/docker-gen/templates/nginx.tmpl:ro
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+    depends_on:
+      - nginx-proxy
+
+
+  acme-companion:
+    image: nginxproxy/acme-companion:2.6
+    container_name: nginx-proxy-acme
+    environment:
+      - NGINX_PROXY_CONTAINER=nginx-proxy-gen
+      - DEFAULT_EMAIL=prod@prod.com
+      # replace ACME_CA_URI with your CA URL if not using self-hosted CA
+      - ACME_CA_URI=https://step-ca:9000/acme/acme/directory
+      # remove CA_BUNDLE line if not using self-hosted CA
+      - CA_BUNDLE=/home/step/certs/root_ca.crt
+    volumes_from:
+      - nginx-proxy
+    volumes:
+      - certs:/etc/nginx/certs:rw
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - acme:/etc/acme.sh
+      - step-data:/home/step:ro
+    depends_on:
+      - nginx-proxy
+      - step-ca
+
+# remove step-ca service if not using self-hosted CA
+  step-ca:
+    image: smallstep/step-ca:latest
+    container_name: step-ca
+    restart: always
+    environment:
+      - DOCKER_STEPCA_INIT_NAME=Smallstep
+      - DOCKER_STEPCA_INIT_DNS_NAMES=localhost,step-ca
+      - DOCKER_STEPCA_INIT_REMOTE_MANAGEMENT=true
+      - DOCKER_STEPCA_INIT_ACME=true
+    volumes:
+      - step-data:/home/step
+    ports:
+      - "9000:9000"
+
 volumes:
+  step-data:
   postgres_data:
   static_volume:
   media_volume:
+  certs:
+  html:
+  vhost:
+  conf:
+  acme:
