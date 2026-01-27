@@ -754,7 +754,7 @@ Access the application at `http://localhost:1337`
 
 ```
 DjangoDockerTemplate/
-├── app/
+├── hello_django/              # Renamed from app/ to hello_django/
 │   ├── hello_django/
 │   │   ├── __init__.py
 │   │   ├── asgi.py
@@ -769,12 +769,18 @@ DjangoDockerTemplate/
 │   └── entrypoint.prod.sh
 ├── nginx/
 │   ├── Dockerfile
-│   └── nginx.conf
+│   ├── nginx.conf
+│   ├── nginx.tmpl              # Template for nginx-proxy auto-config
+│   ├── custom.conf
+│   └── vhost.d/
 ├── .env.dev
+├── .env.staging                # Staging environment variables
+├── .env.staging.db            # Staging database variables
 ├── .env.prod
 ├── .env.prod.db
-├── docker-compose.yml
-├── docker-compose.prod.yml
+├── docker-compose.yml         # Development
+├── docker-compose.staging.yml # Staging with Step CA + nginx-proxy
+├── docker-compose.prod.yml    # Production with Step CA + nginx-proxy
 ├── .gitignore
 └── README.md
 ```
@@ -803,6 +809,201 @@ docker-compose -f docker-compose.prod.yml up -d --build
 
 ---
 
+## Advanced: Automatic SSL with Step CA, nginx-proxy, and acme-companion
+
+For automatic Nginx reverse proxy configuration and SSL certificate management using Step CA (private ACME server), nginx-proxy, and acme-companion.
+
+### Step 22: Understanding the Architecture
+
+This setup provides:
+- **nginx-proxy**: Automated Nginx reverse proxy that auto-configures based on container labels
+- **docker-gen**: Watches Docker containers and regenerates Nginx configs
+- **acme-companion**: Automatic SSL certificate provisioning and renewal via ACME protocol
+- **Step CA**: Private ACME server (no public domain required)
+
+**Benefits:**
+- Zero manual Nginx configuration
+- Automatic SSL certificate issuance and renewal
+- Works without public domains (ideal for internal/staging environments)
+- Multiple applications on same host with automatic routing
+
+### Step 23: Staging Environment with Auto-SSL
+
+The repository includes `docker-compose.staging.yml` with Step CA integration.
+
+**Key services:**
+- **web**: Django app with Gunicorn
+- **db**: PostgreSQL database
+- **nginx-proxy**: Nginx reverse proxy (built from `./nginx/Dockerfile`)
+- **docker-gen**: Config generator using `./nginx/nginx.tmpl`
+- **acme-companion**: SSL certificate manager (nginxproxy/acme-companion:2.6)
+- **step-ca**: Private CA server (smallstep/step-ca:latest)
+
+**Create `.env.staging` file:**
+```bash
+DEBUG=0
+SECRET_KEY=your-secret-key-change-this
+DJANGO_ALLOWED_HOSTS=yourdomain.com
+SQL_ENGINE=django.db.backends.postgresql
+SQL_DATABASE=hello_django_staging
+SQL_USER=hello_django
+SQL_PASSWORD=hello_django
+SQL_HOST=db
+SQL_PORT=5432
+DATABASE=postgres
+VIRTUAL_HOST=yourdomain.com
+VIRTUAL_PORT=8000
+LETSENCRYPT_HOST=yourdomain.com
+LETSENCRYPT_EMAIL=your-email@domain.com
+```
+
+**Create `.env.staging.db` file:**
+```bash
+POSTGRES_USER=hello_django
+POSTGRES_PASSWORD=hello_django
+POSTGRES_DB=hello_django_staging
+```
+
+**Environment Variables Explained:**
+- `VIRTUAL_HOST`: Domain for nginx-proxy to route (can be multiple comma-separated)
+- `VIRTUAL_PORT`: Internal port where app listens (8000 for Gunicorn)
+- `LETSENCRYPT_HOST`: Domain for SSL certificate
+- `LETSENCRYPT_EMAIL`: Email for certificate notifications
+
+**Build and run staging:**
+```bash
+docker-compose -f docker-compose.staging.yml up -d --build
+```
+
+**Run migrations:**
+```bash
+docker-compose -f docker-compose.staging.yml exec web python manage.py migrate --noinput
+```
+
+**Collect static files:**
+```bash
+docker-compose -f docker-compose.staging.yml exec web python manage.py collectstatic --no-input --clear
+```
+
+**Create superuser:**
+```bash
+docker-compose -f docker-compose.staging.yml exec web python manage.py createsuperuser
+```
+
+**Access:**
+- HTTP: `http://yourdomain.com` (redirects to HTTPS)
+- HTTPS: `https://yourdomain.com`
+- Step CA UI: `https://localhost:9000`
+
+### Step 24: Production with Auto-SSL
+
+The `docker-compose.prod.yml` has been updated with the same nginx-proxy + acme-companion architecture.
+
+**Key differences from staging:**
+- Uses `.env.prod` and `.env.prod.db` instead of `.env.staging*`
+- Can use public CA or self-hosted Step CA
+- Production-grade environment variables
+
+**Update `.env.prod` with SSL variables:**
+```bash
+# ... existing variables ...
+VIRTUAL_HOST=yourdomain.com
+VIRTUAL_PORT=8000
+LETSENCRYPT_HOST=yourdomain.com
+LETSENCRYPT_EMAIL=prod@yourdomain.com
+```
+
+**For self-hosted Step CA:**
+- Keep `step-ca` service in docker-compose
+- Set `ACME_CA_URI=https://step-ca:9000/acme/acme/directory`
+- Set `CA_BUNDLE=/home/step/certs/root_ca.crt`
+
+**For public CA (e.g., Let's Encrypt):**
+- Remove `step-ca` service from docker-compose
+- Remove `ACME_CA_URI` from acme-companion environment
+- Remove `CA_BUNDLE` from acme-companion environment
+- Update `DEFAULT_EMAIL` in acme-companion
+
+**Build and run production with auto-SSL:**
+```bash
+docker-compose -f docker-compose.prod.yml up -d --build
+```
+
+**First-time setup:**
+```bash
+# Run migrations
+docker-compose -f docker-compose.prod.yml exec web python manage.py migrate --noinput
+
+# Collect static files
+docker-compose -f docker-compose.prod.yml exec web python manage.py collectstatic --no-input --clear
+
+# Create superuser
+docker-compose -f docker-compose.prod.yml exec web python manage.py createsuperuser
+```
+
+**Verify SSL certificate:**
+```bash
+docker-compose -f docker-compose.prod.yml logs acme-companion
+```
+
+**Certificate renewal:**
+Certificates auto-renew via acme-companion. No manual intervention needed.
+
+### Nginx Template Configuration
+
+The `nginx/nginx.tmpl` file is used by docker-gen to generate Nginx configurations dynamically. It:
+- Auto-detects containers with `VIRTUAL_HOST` labels
+- Configures upstream servers
+- Sets up SSL with certificates from acme-companion
+- Handles HTTP to HTTPS redirects
+- Supports multiple apps on same host
+
+**No manual editing required** - all configuration happens via environment variables in your Django container.
+
+### Troubleshooting Auto-SSL
+
+**Check nginx-proxy logs:**
+```bash
+docker logs nginx-proxy
+```
+
+**Check acme-companion logs:**
+```bash
+docker logs nginx-proxy-acme
+```
+
+**Check Step CA logs:**
+```bash
+docker logs step-ca
+```
+
+**View generated Nginx config:**
+```bash
+docker exec nginx-proxy cat /etc/nginx/conf.d/default.conf
+```
+
+**Certificate not issuing:**
+- Verify `VIRTUAL_HOST` matches `LETSENCRYPT_HOST`
+- Check acme-companion can reach Step CA (network connectivity)
+- Ensure Step CA is initialized (check logs)
+- Verify CA bundle path if using self-hosted CA
+
+**Trust Step CA certificate on client:**
+```bash
+# Get root certificate from Step CA
+docker cp step-ca:/home/step/certs/root_ca.crt ./
+
+# Add to system trust store (varies by OS)
+# macOS:
+sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ./root_ca.crt
+
+# Linux (Ubuntu/Debian):
+sudo cp ./root_ca.crt /usr/local/share/ca-certificates/
+sudo update-ca-certificates
+```
+
+---
+
 ## License
 
 MIT
@@ -814,10 +1015,19 @@ This template is based on best practices from:
 - [TestDriven.io - Django with Let's Encrypt](https://testdriven.io/blog/django-lets-encrypt/)
 - [TestDriven.io - Docker Best Practices for Python Developers](https://testdriven.io/blog/docker-best-practices/)
 - [SmallStep - Run your own private CA & ACME server using step-ca](https://smallstep.com/blog/private-acme-server/)
-- [Jason Wilder - Automated Nginx Reverse Proxy for Docker](http://jasonwilder.com/blog/2014/03/25/automated-nginx-reverse-proxy-for-docker/)
+- [nginx-proxy - Automated Nginx Reverse Proxy for Docker](https://github.com/nginx-proxy/nginx-proxy)
+- [acme-companion - LetsEncrypt companion for nginx-proxy](https://github.com/nginx-proxy/acme-companion)
 
 
 Adapted to use:
+- Python 3.12
+- Django 5.0
+- PostgreSQL 18.1
+- Nginx 1.27-alpine
+- Gunicorn 21.2.0
+- Step CA for private ACME server
+- nginx-proxy for automatic reverse proxy configuration
+- acme-companion for automatic SSL certificate management
 - Python 3.12
 - Django 5.0
 - PostgreSQL 18.1
