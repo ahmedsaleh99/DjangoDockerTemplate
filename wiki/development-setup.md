@@ -17,6 +17,7 @@ This guide walks you through setting up a Django development environment with Do
 
 Before you begin, ensure you have the following installed:
 
+- **Python 3.11** (for local virtual environment)
 - [Docker](https://docs.docker.com/get-docker/) (version 20.10+)
 - [Docker Compose](https://docs.docker.com/compose/install/) (version 1.29+)
 - Git
@@ -25,6 +26,7 @@ Before you begin, ensure you have the following installed:
 Verify your installations:
 
 ```bash
+python3.11 --version
 docker --version
 docker-compose --version
 git --version
@@ -32,7 +34,39 @@ git --version
 
 ## Initial Setup
 
-### 1. Create Django Project
+### 1. Create Virtual Environment
+
+Before setting up Docker, it's recommended to create a Python virtual environment for local development and testing.
+
+**Using venv with Python 3.11:**
+
+```bash
+# Check Python version
+python3.11 --version
+
+# Create virtual environment
+python3.11 -m venv venv
+
+# Activate virtual environment
+# On Linux/Mac:
+source venv/bin/activate
+
+# On Windows:
+venv\Scripts\activate
+
+# Upgrade pip
+pip install --upgrade pip
+```
+
+Once activated, your terminal prompt should show `(venv)` indicating the virtual environment is active.
+
+**Note**: The virtual environment is optional when using Docker, but useful for:
+- Running Django management commands locally
+- Using IDE features (autocomplete, linting)
+- Testing code without rebuilding Docker containers
+- Installing development tools
+
+### 2. Create Django Project
 
 First, let's create a new Django project structure:
 
@@ -41,7 +75,7 @@ mkdir django_docker_app
 cd django_docker_app
 ```
 
-### 2. Create Project Files
+### 3. Create Project Files
 
 Create the following directory structure:
 
@@ -56,7 +90,7 @@ django_docker_app/
 └── .env.dev
 ```
 
-### 3. Requirements File
+### 4. Requirements File
 
 Create `requirements.txt`:
 
@@ -72,7 +106,7 @@ gunicorn==21.2.0
 
 This ensures reproducible builds while making it easy to update dependencies.
 
-### 4. Dockerfile for Development
+### 5. Dockerfile for Development
 
 Create `Dockerfile`:
 
@@ -107,7 +141,7 @@ COPY . .
 ENTRYPOINT ["/usr/src/app/entrypoint.sh"]
 ```
 
-### 5. Entry Point Script
+### 6. Entry Point Script
 
 Create `entrypoint.sh`:
 
@@ -136,7 +170,7 @@ This script:
 - Runs database migrations
 - Executes the command passed to the container
 
-### 6. Docker Compose Configuration
+### 7. Docker Compose Configuration
 
 Create `docker-compose.yml`:
 
@@ -168,7 +202,7 @@ volumes:
   postgres_data:
 ```
 
-### 7. Environment Variables
+### 8. Environment Variables
 
 Create `.env.dev`:
 
