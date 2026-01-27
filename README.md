@@ -4,7 +4,7 @@ A production-ready Django application template with Docker, PostgreSQL, Gunicorn
 
 ## Features
 
-- 🐳 **Docker & Docker Compose** - Containerized development and production environments
+- 🐳 **Docker & Docker Compose** - Containerized development, staging, and production environments
 - 🗄️ **PostgreSQL** - Production-grade database
 - 🚀 **Gunicorn** - Production WSGI HTTP server
 - 🌐 **Nginx** - Reverse proxy and static file serving
@@ -40,6 +40,7 @@ See the [Production Deployment Guide](wiki/production-deployment.md) for detaile
 ## Documentation
 
 - 📖 [Development Setup](wiki/development-setup.md) - Complete development environment guide
+- 🎭 [Staging Environment](wiki/staging-environment.md) - Staging environment setup and workflows
 - 🚀 [Production Deployment](wiki/production-deployment.md) - Production setup with Gunicorn and Nginx
 - 🔒 [SSL/HTTPS Setup](wiki/ssl-setup.md) - Step CA with nginx-proxy and acme-companion for automatic SSL
 - 🛠️ [Troubleshooting](wiki/troubleshooting.md) - Common issues and solutions

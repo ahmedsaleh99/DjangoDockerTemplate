@@ -921,4 +921,5 @@ If you can't solve the issue:
 
 - [Best Practices](best-practices.md)
 - [Development Setup](development-setup.md)
+- [Staging Environment](staging-environment.md)
 - [Production Deployment](production-deployment.md)

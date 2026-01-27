@@ -890,6 +890,7 @@ docker run --rm -v nginx-certs:/data -v $(pwd):/backup alpine tar czf /backup/ce
 
 ## Next Steps
 
+- [Staging Environment](staging-environment.md) - Set up staging with SSL
 - [Best Practices and Security](best-practices.md)
 - [Troubleshooting Guide](troubleshooting.md)
 - [Production Deployment](production-deployment.md)

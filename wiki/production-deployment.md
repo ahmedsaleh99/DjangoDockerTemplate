@@ -772,6 +772,7 @@ docker stats
 
 ## Next Steps
 
+- [Staging Environment](staging-environment.md) - Test before production deployment
 - [SSL/HTTPS Setup with Step CA](ssl-setup.md) - Automated SSL with nginx-proxy and acme-companion
 - [Best Practices and Security](best-practices.md)
 - [Troubleshooting Guide](troubleshooting.md)

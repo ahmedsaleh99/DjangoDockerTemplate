@@ -575,6 +575,7 @@ ports:
 
 ## Next Steps
 
+- [Staging Environment](staging-environment.md) - Set up staging for testing
 - [Production Deployment Guide](production-deployment.md)
 - [SSL/HTTPS Setup](ssl-setup.md)
 - [Best Practices](best-practices.md)
