@@ -491,4 +491,319 @@ ENTRYPOINT ["/usr/src/app/entrypoint.sh"]
 - The `chmod` command ensures the script is executable
 - The `ENTRYPOINT` directive runs the entrypoint script before starting the Django development server
 
+---
+
+## Production Deployment
+
+### Step 14: Production Dockerfile
+
+Create `app/Dockerfile.prod` for production:
+
+```dockerfile
+# Pull official base image
+FROM python:3.12-alpine as builder
+
+# Set work directory
+WORKDIR /usr/src/app
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Install psycopg2 dependencies
+RUN apk update && apk add postgresql-dev gcc python3-dev musl-dev
+
+# Lint
+RUN pip install --upgrade pip
+RUN pip install flake8==7.0.0
+COPY . .
+RUN flake8 --ignore=E501,F401 .
+
+# Install dependencies
+COPY ./requirements.txt .
+RUN pip wheel --no-cache-dir --no-deps --wheel-dir /usr/src/app/wheels -r requirements.txt
+
+# Final stage
+FROM python:3.12-alpine
+
+# Create directory for the app user
+RUN mkdir -p /home/app
+
+# Create the app user
+RUN addgroup -S app && adduser -S app -G app
+
+# Create the appropriate directories
+ENV HOME=/home/app
+ENV APP_HOME=/home/app/web
+RUN mkdir $APP_HOME
+RUN mkdir $APP_HOME/staticfiles
+RUN mkdir $APP_HOME/mediafiles
+WORKDIR $APP_HOME
+
+# Install dependencies
+RUN apk update && apk add libpq
+COPY --from=builder /usr/src/app/wheels /wheels
+COPY --from=builder /usr/src/app/requirements.txt .
+RUN pip install --no-cache /wheels/*
+
+# Copy entrypoint.prod.sh
+COPY ./entrypoint.prod.sh .
+RUN sed -i 's/\r$//g'  $APP_HOME/entrypoint.prod.sh
+RUN chmod +x  $APP_HOME/entrypoint.prod.sh
+
+# Copy project
+COPY . $APP_HOME
+
+# Chown all the files to the app user
+RUN chown -R app:app $APP_HOME
+
+# Change to the app user
+USER app
+
+# Run entrypoint.prod.sh
+ENTRYPOINT ["/home/app/web/entrypoint.prod.sh"]
+```
+
+### Step 15: Production Entrypoint Script
+
+Create `app/entrypoint.prod.sh`:
+
+```bash
+#!/bin/sh
+
+if [ "$DATABASE" = "postgres" ]
+then
+    echo "Waiting for postgres..."
+
+    while ! nc -z $SQL_HOST $SQL_PORT; do
+      sleep 0.1
+    done
+
+    echo "PostgreSQL started"
+fi
+
+exec "$@"
+```
+
+Update permissions:
+```bash
+chmod +x app/entrypoint.prod.sh
+```
+
+### Step 16: Production Environment Variables
+
+Create `.env.prod` in the main directory:
+
+```env
+DEBUG=0
+SECRET_KEY=your_production_secret_key_change_this
+DJANGO_ALLOWED_HOSTS=localhost 127.0.0.1 [::1]
+SQL_ENGINE=django.db.backends.postgresql
+SQL_DATABASE=hello_django_prod
+SQL_USER=hello_django
+SQL_PASSWORD=hello_django
+SQL_HOST=db
+SQL_PORT=5432
+DATABASE=postgres
+```
+
+Create `.env.prod.db` for production database:
+
+```env
+POSTGRES_USER=hello_django
+POSTGRES_PASSWORD=hello_django
+POSTGRES_DB=hello_django_prod
+```
+
+### Step 17: Production Docker Compose
+
+Create `docker-compose.prod.yml`:
+
+```yaml
+version: '3.8'
+
+services:
+  web:
+    build:
+      context: ./app
+      dockerfile: Dockerfile.prod
+    command: gunicorn hello_django.wsgi:application --bind 0.0.0.0:8000
+    volumes:
+      - static_volume:/home/app/web/staticfiles
+      - media_volume:/home/app/web/mediafiles
+    expose:
+      - 8000
+    env_file:
+      - ./.env.prod
+    depends_on:
+      - db
+  
+  db:
+    image: postgres:18.1-trixie
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    env_file:
+      - ./.env.prod.db
+  
+  nginx:
+    build: ./nginx
+    volumes:
+      - static_volume:/home/app/web/staticfiles
+      - media_volume:/home/app/web/mediafiles
+    ports:
+      - 1337:80
+    depends_on:
+      - web
+
+volumes:
+  postgres_data:
+  static_volume:
+  media_volume:
+```
+
+### Step 18: Nginx Configuration
+
+Create `nginx/Dockerfile`:
+
+```dockerfile
+FROM nginx:1.27-alpine
+
+RUN rm /etc/nginx/conf.d/default.conf
+COPY nginx.conf /etc/nginx/conf.d
+```
+
+Create `nginx/nginx.conf`:
+
+```nginx
+upstream hello_django {
+    server web:8000;
+}
+
+server {
+    listen 80;
+
+    location / {
+        proxy_pass http://hello_django;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Host $host;
+        proxy_redirect off;
+    }
+
+    location /static/ {
+        alias /home/app/web/staticfiles/;
+    }
+
+    location /media/ {
+        alias /home/app/web/mediafiles/;
+    }
+}
+```
+
+### Step 19: Update Django Settings for Production
+
+Update `app/hello_django/settings.py` to handle static and media files:
+
+```python
+# Static files (CSS, JavaScript, Images)
+STATIC_URL = '/static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+# Media files
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'mediafiles'
+```
+
+### Step 20: Build and Run Production
+
+Build and run the production stack:
+
+```bash
+docker-compose -f docker-compose.prod.yml up -d --build
+```
+
+Run migrations and collect static files:
+
+```bash
+docker-compose -f docker-compose.prod.yml exec web python manage.py migrate --noinput
+docker-compose -f docker-compose.prod.yml exec web python manage.py collectstatic --no-input --clear
+```
+
+Create superuser:
+
+```bash
+docker-compose -f docker-compose.prod.yml exec web python manage.py createsuperuser
+```
+
+Access the application at `http://localhost:1337`
+
+### Step 21: Project Structure (Final)
+
+```
+DjangoDockerTemplate/
+├── app/
+│   ├── hello_django/
+│   │   ├── __init__.py
+│   │   ├── asgi.py
+│   │   ├── settings.py
+│   │   ├── urls.py
+│   │   └── wsgi.py
+│   ├── manage.py
+│   ├── requirements.txt
+│   ├── Dockerfile
+│   ├── Dockerfile.prod
+│   ├── entrypoint.sh
+│   └── entrypoint.prod.sh
+├── nginx/
+│   ├── Dockerfile
+│   └── nginx.conf
+├── .env.dev
+├── .env.prod
+├── .env.prod.db
+├── docker-compose.yml
+├── docker-compose.prod.yml
+├── .gitignore
+└── README.md
+```
+
+### Production Commands
+
+**Stop production containers:**
+```bash
+docker-compose -f docker-compose.prod.yml down
+```
+
+**Stop and remove volumes:**
+```bash
+docker-compose -f docker-compose.prod.yml down -v
+```
+
+**View logs:**
+```bash
+docker-compose -f docker-compose.prod.yml logs -f
+```
+
+**Rebuild after changes:**
+```bash
+docker-compose -f docker-compose.prod.yml up -d --build
+```
+
+---
+
+## License
+
+MIT
+
+## Acknowledgments
+
+This template is based on best practices from:
+- [TestDriven.io - Dockerizing Django with Postgres, Gunicorn, and Nginx](https://testdriven.io/blog/dockerizing-django-with-postgres-gunicorn-and-nginx/)
+- [TestDriven.io - Django with Let's Encrypt](https://testdriven.io/blog/django-lets-encrypt/)
+
+Adapted to use:
+- Python 3.12
+- Django 5.0
+- PostgreSQL 18.1
+- Step CA for private ACME server
+- nginx-proxy and acme-companion for automated SSL management
+
 
