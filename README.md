@@ -334,4 +334,56 @@ docker-compose down -v
 
 If you see the Django welcome page at http://localhost:8000, congratulations! Your Django application is now successfully running in a Docker container.
 
+### Step 9: Add PostgreSQL Database
+
+Now let's add PostgreSQL as our database. We'll use the official PostgreSQL image and configure Django to connect to it.
+
+First, update the `docker-compose.yml` file to add the PostgreSQL service. Open `docker-compose.yml` and modify it:
+
+```yaml
+# dev environment docker compose
+services:
+  web:
+    build: ./app
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - ./app/:/usr/src/app/
+    ports:
+      - 8000:8000
+    env_file:
+      - ./.env.dev
+  
+  db:
+    image: postgres:18.1-trixie
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    environment:
+      - POSTGRES_USER=hello_django
+      - POSTGRES_PASSWORD=hello_django
+      - POSTGRES_DB=hello_django_dev
+
+volumes:
+  postgres_data:
+```
+
+Next, update the `.env.dev` file to add the database connection variables:
+
+```env
+DEBUG=1
+SECRET_KEY=foo
+DJANGO_ALLOWED_HOSTS=localhost 127.0.0.1 [::1]
+SQL_ENGINE=django.db.backends.postgresql
+SQL_DATABASE=hello_django_dev
+SQL_USER=hello_django
+SQL_PASSWORD=hello_django
+SQL_HOST=db
+SQL_PORT=5432
+```
+
+**Explanation:**
+- **db service**: Runs PostgreSQL 18.1 with persistent data storage
+- **postgres_data volume**: Ensures database data persists between container restarts
+- **Environment variables**: Configure PostgreSQL credentials and Django database connection
+- **SQL_HOST=db**: The hostname matches the service name in docker-compose.yml
+
 
