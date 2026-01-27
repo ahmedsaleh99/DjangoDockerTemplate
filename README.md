@@ -192,4 +192,68 @@ DjangoDockerTemplate/
         └── wsgi.py               # WSGI configuration
 ```
 
+### Step 6: Create Docker Compose and Environment File
+
+Now let's create a docker-compose.yml file in the main directory to orchestrate our containers.
+
+First, navigate back to the main directory and create the `.env.dev` file for environment variables:
+
+```bash
+# Navigate back to main directory
+cd ..
+
+# Create .env.dev file
+touch .env.dev
+```
+
+Add the following environment variables to `.env.dev`:
+
+```env
+DEBUG=1
+SECRET_KEY=foo
+DJANGO_ALLOWED_HOSTS=localhost 127.0.0.1 [::1]
+```
+
+Now create the `docker-compose.yml` file in the main directory:
+
+```bash
+touch docker-compose.yml
+```
+
+Add the following content to `docker-compose.yml`:
+
+```yaml
+version: '3.8'
+
+services:
+  web:
+    build: ./app
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - ./app/:/usr/src/app/
+    ports:
+      - 8000:8000
+    env_file:
+      - ./.env.dev
+```
+
+After creating these files, your directory structure should look like this:
+
+```
+DjangoDockerTemplate/
+├── venv/                         # Virtual environment (do NOT commit to git)
+├── .env.dev                      # Development environment variables (NEW)
+├── docker-compose.yml            # Docker Compose configuration (NEW)
+└── hello_django/                 # Django project root
+    ├── Dockerfile                # Docker configuration
+    ├── manage.py                 # Django management script
+    ├── requirements.txt          # Python dependencies
+    └── hello_django/             # Django project package
+        ├── __init__.py
+        ├── asgi.py
+        ├── settings.py           # Project settings
+        ├── urls.py               # URL configuration
+        └── wsgi.py               # WSGI configuration
+```
+
 
