@@ -226,10 +226,10 @@ Add the following content to `docker-compose.yml`:
 # dev environment docker compose
 services:
   web:
-    build: ./app
+    build: ./hello_django
     command: python manage.py runserver 0.0.0.0:8000
     volumes:
-      - ./app/:/usr/src/app/
+      - ./hello_django/:/usr/src/app/
     ports:
       - 8000:8000
     env_file:
@@ -344,10 +344,10 @@ First, update the `docker-compose.yml` file to add the PostgreSQL service. Open 
 # dev environment docker compose
 services:
   web:
-    build: ./app
+    build: ./hello_django
     command: python manage.py runserver 0.0.0.0:8000
     volumes:
-      - ./app/:/usr/src/app/
+      - ./hello_django/:/usr/src/app/
     ports:
       - 8000:8000
     env_file:
