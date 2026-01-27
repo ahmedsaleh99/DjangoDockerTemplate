@@ -496,14 +496,14 @@ ENTRYPOINT ["/usr/src/app/entrypoint.sh"]
 ---
 
 ## Production Deployment
-
+The production environment is almost the same except we used multistage builds for docker image to reduce image size.
 ### Step 14: Production Dockerfile
 
 Create `hello_django/Dockerfile.prod` for production:
 
 ```dockerfile
 # Pull official base image
-FROM python:3.12.12-slim-trixie as builder
+FROM python:3.12.12-slim-trixie AS builder
 
 # Set work directory
 WORKDIR /usr/src/app
@@ -512,8 +512,9 @@ WORKDIR /usr/src/app
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Install psycopg2 dependencies
-RUN apk update && apk add postgresql-dev gcc python3-dev musl-dev
+# install system dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends gcc
 
 # Lint
 RUN pip install --upgrade pip
@@ -532,7 +533,7 @@ FROM python:3.12.12-slim-trixie
 RUN mkdir -p /home/app
 
 # Create the app user
-RUN addgroup -S app && adduser -S app -G app
+RUN addgroup --system app && adduser --system --group app
 
 # Create the appropriate directories
 ENV HOME=/home/app
@@ -542,8 +543,13 @@ RUN mkdir $APP_HOME/staticfiles
 RUN mkdir $APP_HOME/mediafiles
 WORKDIR $APP_HOME
 
-# Install dependencies
-RUN apk update && apk add libpq
+# install system dependencies
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends netcat-openbsd \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean \
+    && apt-get autoremove -y
+
 COPY --from=builder /usr/src/app/wheels /wheels
 COPY --from=builder /usr/src/app/requirements.txt .
 RUN pip install --no-cache /wheels/*
@@ -583,7 +589,8 @@ then
 
     echo "PostgreSQL started"
 fi
-
+# python manage.py migrate --noinput
+python manage.py collectstatic --no-input --clear
 exec "$@"
 ```
 
@@ -622,12 +629,10 @@ POSTGRES_DB=hello_django_prod
 Create `docker-compose.prod.yml`:
 
 ```yaml
-version: '3.8'
-
 services:
   web:
     build:
-      context: ./app
+      context: ./hello_django
       dockerfile: Dockerfile.prod
     command: gunicorn hello_django.wsgi:application --bind 0.0.0.0:8000
     volumes:
@@ -643,9 +648,16 @@ services:
   db:
     image: postgres:18.1-trixie
     volumes:
-      - postgres_data:/var/lib/postgresql/data/
+      - postgres_data:/var/lib/postgresql
     env_file:
       - ./.env.prod.db
+    
+    healthcheck: # (optional) healthcheck
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    
   
   nginx:
     build: ./nginx
@@ -723,7 +735,7 @@ Build and run the production stack:
 docker-compose -f docker-compose.prod.yml up -d --build
 ```
 
-Run migrations and collect static files:
+Here are two usefull  migrations and collect static files:
 
 ```bash
 docker-compose -f docker-compose.prod.yml exec web python manage.py migrate --noinput
