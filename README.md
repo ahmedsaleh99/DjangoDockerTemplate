@@ -356,7 +356,7 @@ services:
   db:
     image: postgres:18.1-trixie
     volumes:
-      - postgres_data:/var/lib/postgresql/data/
+      - postgres_data:/var/lib/postgresql/
     environment:
       - POSTGRES_USER=hello_django
       - POSTGRES_PASSWORD=hello_django
@@ -422,13 +422,13 @@ docker-compose exec web python manage.py migrate --noinput
 
 ### Step 12: Create Entrypoint Script
 
-Next, add an `entrypoint.sh` file to the "app" directory to verify that Postgres is healthy before applying the migrations and running the Django development server:
+Next, add an `entrypoint.sh` file to the `hello_django` directory to verify that Postgres is healthy before applying the migrations and running the Django development server:
 
 Create `hello_django/entrypoint.sh`:
 
 ```bash
 #!/bin/sh
-
+# if database is postgres wait until it become up and running
 if [ "$DATABASE" = "postgres" ]
 then
     echo "Waiting for postgres..."
@@ -440,8 +440,8 @@ then
     echo "PostgreSQL started"
 fi
 
-python manage.py flush --no-input
-python manage.py migrate
+python manage.py flush --no-input # always delete old database 
+python manage.py migrate # always do migration
 
 exec "$@"
 ```
@@ -460,7 +460,7 @@ Update `hello_django/Dockerfile`:
 
 ```dockerfile
 # Pull official base image
-FROM python:3.12-alpine
+FROM python:3.12.12-slim-trixie
 
 # Set work directory
 WORKDIR /usr/src/app
@@ -497,11 +497,11 @@ ENTRYPOINT ["/usr/src/app/entrypoint.sh"]
 
 ### Step 14: Production Dockerfile
 
-Create `app/Dockerfile.prod` for production:
+Create `hello_django/Dockerfile.prod` for production:
 
 ```dockerfile
 # Pull official base image
-FROM python:3.12-alpine as builder
+FROM python:3.12.12-slim-trixie as builder
 
 # Set work directory
 WORKDIR /usr/src/app
@@ -524,7 +524,7 @@ COPY ./requirements.txt .
 RUN pip wheel --no-cache-dir --no-deps --wheel-dir /usr/src/app/wheels -r requirements.txt
 
 # Final stage
-FROM python:3.12-alpine
+FROM python:3.12.12-slim-trixie
 
 # Create directory for the app user
 RUN mkdir -p /home/app
@@ -701,7 +701,7 @@ server {
 
 ### Step 19: Update Django Settings for Production
 
-Update `app/hello_django/settings.py` to handle static and media files:
+Update `hello_django/hello_django/settings.py` to handle static and media files:
 
 ```python
 # Static files (CSS, JavaScript, Images)
