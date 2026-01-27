@@ -813,6 +813,78 @@ docker-compose -f docker-compose.prod.yml up -d --build
 
 For automatic Nginx reverse proxy configuration and SSL certificate management using Step CA (private ACME server), nginx-proxy, and acme-companion.
 
+### Local Domain Setup for Testing
+
+Since Step CA works with domains (not public domains required), you'll need to map your local IP address to a staging domain name for testing purposes.
+
+#### 1. Get Your Local IP Address
+
+**On Windows:**
+```bash
+ipconfig
+```
+Look for your IPv4 address (e.g., `192.168.1.100`)
+
+**On Linux/Mac:**
+```bash
+hostname -I
+# or
+ifconfig
+# or
+ip addr show
+```
+
+#### 2. Map Local Domain to Hosts File
+
+**On Windows:**
+
+1. Open Notepad as Administrator
+2. Open file: `C:\Windows\System32\drivers\etc\hosts`
+3. Add your local domain mapping:
+
+```
+192.168.1.100    staging.yourdomain.local
+192.168.1.100    www.staging.yourdomain.local
+```
+
+**On Linux/Mac:**
+
+1. Edit hosts file with sudo:
+
+```bash
+sudo nano /etc/hosts
+```
+
+2. Add your local domain mapping:
+
+```
+192.168.1.100    staging.yourdomain.local
+192.168.1.100    www.staging.yourdomain.local
+```
+
+3. Save and exit (Ctrl+X, then Y, then Enter)
+
+#### 3. Verify Domain Resolution
+
+**Test that your domain resolves correctly:**
+
+```bash
+ping staging.yourdomain.local
+```
+
+You should see responses from your local IP address (192.168.1.100 in this example).
+
+**Test in browser:**
+
+Open `http://staging.yourdomain.local` in your browser - you should be able to reach your local machine (even if nothing is running yet).
+
+**Notes:**
+- Replace `192.168.1.100` with your actual local IP address
+- Replace `staging.yourdomain.local` with your desired staging domain name
+- You can use any domain suffix like `.local`, `.test`, or `.dev` for local testing
+- This eliminates the need for a public domain name when using Step CA
+- All devices that need to access the staging site will need this hosts file entry
+
 ### Django Configuration for HTTPS Proxy
 
 First, to run the Django app behind an HTTPS proxy you'll need to add the `SECURE_PROXY_SSL_HEADER` setting to `settings.py`:
