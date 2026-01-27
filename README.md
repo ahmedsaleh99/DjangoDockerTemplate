@@ -1,6 +1,6 @@
 # Django Docker Template
 
-A production-ready Django application template with Docker, PostgreSQL, Gunicorn, and Nginx. This template provides a complete setup for both development and production environments.
+A production-ready Django application template with Docker, PostgreSQL, Gunicorn, and Nginx. This template provides a complete setup suitable for development, staging, and private production environments.
 
 ## Features
 
@@ -55,13 +55,13 @@ See the [Production Deployment Guide](wiki/production-deployment.md) for detaile
                    │
 ┌──────────────────▼──────────────────────────┐
 │           Gunicorn (WSGI Server)            │
-│              Django Application              │
-│               (Port 8000)                    │
+│              Django Application             │
+│               (Port 8000)                   │
 └──────────────────┬──────────────────────────┘
                    │
 ┌──────────────────▼──────────────────────────┐
-│          PostgreSQL Database                 │
-│               (Port 5432)                    │
+│          PostgreSQL Database                │
+│               (Port 5432)                   │
 └─────────────────────────────────────────────┘
 ```
 
