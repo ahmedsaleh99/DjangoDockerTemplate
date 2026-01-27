@@ -465,6 +465,7 @@ docker exec acme-companion ping step-ca
 docker logs acme-companion -f
 
 # Verify environment variables on web container
+# Note: acme-companion uses LETSENCRYPT_* variable names even with Step CA
 docker exec web env | grep -E "LETSENCRYPT_HOST|LETSENCRYPT_EMAIL"
 
 # Check root certificate is accessible

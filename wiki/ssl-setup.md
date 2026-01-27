@@ -210,7 +210,7 @@ services:
       - nginx-html:/usr/share/nginx/html
       - acme-state:/etc/acme.sh
     environment:
-      - DEFAULT_EMAIL=admin@example.com
+      - DEFAULT_EMAIL=your-email@yourdomain.com
       - NGINX_PROXY_CONTAINER=nginx-proxy
       # Configure for Step CA
       - ACME_CA_URI=https://step-ca:9000/acme/acme/directory
@@ -277,7 +277,7 @@ services:
       - VIRTUAL_PORT=8000
       # acme-companion configuration
       - LETSENCRYPT_HOST=myapp.local
-      - LETSENCRYPT_EMAIL=admin@example.com
+      - LETSENCRYPT_EMAIL=your-email@yourdomain.com
     depends_on:
       - db
     networks:
@@ -314,7 +314,7 @@ networks:
 | `VIRTUAL_HOST` | Domain name for your app | `myapp.local` |
 | `VIRTUAL_PORT` | Internal port (Gunicorn) | `8000` |
 | `LETSENCRYPT_HOST` | Domain for certificate | `myapp.local` |
-| `LETSENCRYPT_EMAIL` | Admin email | `admin@example.com` |
+| `LETSENCRYPT_EMAIL` | Admin email | `your-email@yourdomain.com` |
 
 ### 3. Multiple Domains
 
@@ -404,7 +404,7 @@ services:
       - nginx-html:/usr/share/nginx/html
       - acme-state:/etc/acme.sh
     environment:
-      - DEFAULT_EMAIL=admin@example.com
+      - DEFAULT_EMAIL=your-email@yourdomain.com
       - NGINX_PROXY_CONTAINER=nginx-proxy
       - ACME_CA_URI=https://step-ca:9000/acme/acme/directory
       - CA_BUNDLE=/etc/nginx/certs/step-ca-root.crt
@@ -431,7 +431,7 @@ services:
       - VIRTUAL_HOST=myapp.local
       - VIRTUAL_PORT=8000
       - LETSENCRYPT_HOST=myapp.local
-      - LETSENCRYPT_EMAIL=admin@example.com
+      - LETSENCRYPT_EMAIL=your-email@yourdomain.com
     depends_on:
       - db
       - step-ca
