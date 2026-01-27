@@ -935,20 +935,25 @@ The repository includes `docker-compose.staging.yml` with Step CA integration.
 
 **Create `.env.staging` file:**
 ```bash
+DOMAIN=yourdomain.stage
+
 DEBUG=0
-SECRET_KEY=your-secret-key-change-this
-DJANGO_ALLOWED_HOSTS=yourdomain.com
+SECRET_KEY=change_me
+DJANGO_ALLOWED_HOSTS=${DOMAIN}
+CSRF_TRUSTED_ORIGINS=https://${DOMAIN}
+
 SQL_ENGINE=django.db.backends.postgresql
-SQL_DATABASE=hello_django_staging
+SQL_DATABASE=hello_django_prod
 SQL_USER=hello_django
 SQL_PASSWORD=hello_django
 SQL_HOST=db
 SQL_PORT=5432
 DATABASE=postgres
-VIRTUAL_HOST=yourdomain.com
+
+LETSENCRYPT_HOST=${DOMAIN}
+VIRTUAL_HOST=${DOMAIN}
 VIRTUAL_PORT=8000
-LETSENCRYPT_HOST=yourdomain.com
-LETSENCRYPT_EMAIL=your-email@domain.com
+HTTPS_METHOD=redirect
 ```
 
 **Create `.env.staging.db` file:**
@@ -962,7 +967,6 @@ POSTGRES_DB=hello_django_staging
 - `VIRTUAL_HOST`: Domain for nginx-proxy to route (can be multiple comma-separated)
 - `VIRTUAL_PORT`: Internal port where app listens (8000 for Gunicorn)
 - `LETSENCRYPT_HOST`: Domain for SSL certificate
-- `LETSENCRYPT_EMAIL`: Email for certificate notifications
 
 **Build and run staging:**
 ```bash
@@ -1051,11 +1055,25 @@ The `docker-compose.prod.yml` has been updated with the same nginx-proxy + acme-
 
 **Update `.env.prod` with SSL variables:**
 ```bash
-# ... existing variables ...
-VIRTUAL_HOST=yourdomain.com
+DOMAIN=yourdomain.prod # Change to your production domain
+
+DEBUG=0
+SECRET_KEY=change_me # use docker secrets instead for better security
+DJANGO_ALLOWED_HOSTS=${DOMAIN}
+CSRF_TRUSTED_ORIGINS=https://${DOMAIN}
+
+SQL_ENGINE=django.db.backends.postgresql
+SQL_DATABASE=hello_django_prod
+SQL_USER=hello_django
+SQL_PASSWORD=hello_django # use docker secrets instead for better security
+SQL_HOST=db
+SQL_PORT=5432
+DATABASE=postgres
+
+LETSENCRYPT_HOST=${DOMAIN}
+VIRTUAL_HOST=${DOMAIN}
 VIRTUAL_PORT=8000
-LETSENCRYPT_HOST=yourdomain.com
-LETSENCRYPT_EMAIL=prod@yourdomain.com
+HTTPS_METHOD=redirect
 ```
 
 **For self-hosted Step CA:**
@@ -1096,7 +1114,7 @@ Certificates auto-renew via acme-companion. No manual intervention needed.
 
 ### Nginx Template Configuration
 
-The `nginx/nginx.tmpl` file is used by docker-gen to generate Nginx configurations dynamically. It:
+The [`nginx/nginx.tmpl`](https://raw.githubusercontent.com/nginx-proxy/nginx-proxy/main/nginx.tmpl) file is used by docker-gen to generate Nginx configurations dynamically. It:
 - Auto-detects containers with `VIRTUAL_HOST` labels
 - Configures upstream servers
 - Sets up SSL with certificates from acme-companion
@@ -1133,19 +1151,6 @@ docker exec nginx-proxy cat /etc/nginx/conf.d/default.conf
 - Ensure Step CA is initialized (check logs)
 - Verify CA bundle path if using self-hosted CA
 
-**Trust Step CA certificate on client:**
-```bash
-# Get root certificate from Step CA
-docker cp step-ca:/home/step/certs/root_ca.crt ./
-
-# Add to system trust store (varies by OS)
-# macOS:
-sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ./root_ca.crt
-
-# Linux (Ubuntu/Debian):
-sudo cp ./root_ca.crt /usr/local/share/ca-certificates/
-sudo update-ca-certificates
-```
 
 ---
 

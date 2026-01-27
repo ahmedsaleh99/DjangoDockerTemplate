@@ -10,7 +10,7 @@ services:
     expose:
       - 8000
     env_file:
-      - ./.env..env.prod
+      - ./.env.prod
     depends_on:
       - db
   
