@@ -249,11 +249,7 @@ DjangoDockerTemplate/
     ├── manage.py                 # Django management script
     ├── requirements.txt          # Python dependencies
     └── hello_django/             # Django project package
-        ├── __init__.py
-        ├── asgi.py
-        ├── settings.py           # Project settings
-        ├── urls.py               # URL configuration
-        └── wsgi.py               # WSGI configuration
+        ...
 ```
 
 ### Step 7: Adjust Django Settings for Environment Variables
