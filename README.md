@@ -57,3 +57,84 @@ docker-compose down
 docker-compose down -v
 ```
 
+## From Scratch - Step by Step
+
+This section guides you through creating a Django project from scratch before containerizing it.
+
+### Step 1: Create Virtual Environment
+
+```bash
+# Create a new directory for your project
+mkdir django_docker_project
+cd django_docker_project
+
+# Create virtual environment with Python 3.11
+python3.11 -m venv venv
+
+# Activate the virtual environment
+# On Linux/Mac:
+source venv/bin/activate
+
+# On Windows:
+# venv\Scripts\activate
+```
+
+### Step 2: Create requirements.txt
+
+Create a `requirements.txt` file with Django 5:
+
+```txt
+Django==5.0
+psycopg2-binary==2.9.9
+gunicorn==21.2.0
+```
+
+Install the requirements:
+
+```bash
+pip install -r requirements.txt
+```
+
+### Step 3: Create Django Project
+
+Use django-admin to create a new project named `hello_django`:
+
+```bash
+django-admin startproject hello_django .
+```
+
+**Note:** The `.` at the end creates the project in the current directory.
+
+### Step 4: Project Structure
+
+After creating the Django project, your directory structure should look like this:
+
+```
+django_docker_project/
+├── venv/                    # Virtual environment (excluded from git)
+├── hello_django/            # Django project directory
+│   ├── __init__.py
+│   ├── asgi.py
+│   ├── settings.py         # Project settings
+│   ├── urls.py             # URL configuration
+│   └── wsgi.py             # WSGI configuration
+├── manage.py                # Django management script
+└── requirements.txt         # Python dependencies
+```
+
+### Step 5: Verify Installation
+
+Test that Django is working correctly:
+
+```bash
+# Run development server
+python manage.py runserver
+
+# You should see:
+# Starting development server at http://127.0.0.1:8000/
+# Visit http://127.0.0.1:8000/ in your browser
+```
+
+Press `Ctrl+C` to stop the development server.
+
+
