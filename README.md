@@ -280,4 +280,58 @@ ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS").split(" ")
 
 These changes allow your Django application to use the values from the `.env.dev` file we created in Step 6.
 
+### Step 8: Build and Run with Docker Compose
+
+Now it's time to build and run your Dockerized Django application using Docker Compose.
+
+```bash
+# Make sure you're in the main directory (DjangoDockerTemplate)
+# Build the Docker image and start the containers
+docker-compose up -d --build
+```
+
+**What this command does:**
+- `docker-compose up`: Starts the services defined in docker-compose.yml
+- `-d`: Runs containers in detached mode (in the background)
+- `--build`: Builds the Docker image before starting containers
+
+After running this command, Docker will:
+1. Build the Docker image from the Dockerfile
+2. Install all dependencies from requirements.txt
+3. Start the web service container
+4. Map port 8000 from the container to your local machine
+
+**Check if the website is up:**
+
+Open your web browser and navigate to:
+```
+http://localhost:8000
+```
+
+You should see the Django default welcome page with the message "The install worked successfully! Congratulations!"
+
+**Useful commands:**
+
+```bash
+# View running containers
+docker-compose ps
+
+# View logs
+docker-compose logs
+
+# View logs for the web service only
+docker-compose logs web
+
+# Follow logs in real-time
+docker-compose logs -f web
+
+# Stop the containers
+docker-compose down
+
+# Stop containers and remove volumes
+docker-compose down -v
+```
+
+If you see the Django welcome page at http://localhost:8000, congratulations! Your Django application is now successfully running in a Docker container.
+
 
