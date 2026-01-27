@@ -256,4 +256,33 @@ DjangoDockerTemplate/
         └── wsgi.py               # WSGI configuration
 ```
 
+### Step 7: Adjust Django Settings for Environment Variables
+
+Now we need to configure Django's `settings.py` to read from environment variables. Open `hello_django/hello_django/settings.py` and make the following changes:
+
+First, import the `os` module at the top of the file (if not already imported):
+
+```python
+import os
+```
+
+Then, replace the hardcoded values with environment variable readers:
+
+```python
+SECRET_KEY = os.environ.get("SECRET_KEY")
+
+DEBUG = bool(os.environ.get("DEBUG", default=0))
+
+# 'DJANGO_ALLOWED_HOSTS' should be a single string of hosts with a space between each.
+# For example: 'DJANGO_ALLOWED_HOSTS=localhost 127.0.0.1 [::1]'
+ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS").split(" ")
+```
+
+**Explanation:**
+- `SECRET_KEY`: Reads from the environment variable instead of being hardcoded
+- `DEBUG`: Converts the environment variable to a boolean (0 = False, any other value = True)
+- `ALLOWED_HOSTS`: Splits the space-separated string from the environment variable into a list
+
+These changes allow your Django application to use the values from the `.env.dev` file we created in Step 6.
+
 
