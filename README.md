@@ -476,6 +476,8 @@ RUN pip install -r requirements.txt
 
 # Copy entrypoint.sh
 COPY ./entrypoint.sh .
+# remove \r from the shell script to be valid for linux
+# in case you used a windows machine for devlopment
 RUN sed -i 's/\r$//g' /usr/src/app/entrypoint.sh
 RUN chmod +x /usr/src/app/entrypoint.sh
 
