@@ -378,6 +378,7 @@ SQL_USER=hello_django
 SQL_PASSWORD=hello_django
 SQL_HOST=db
 SQL_PORT=5432
+DATABASE=postgres
 ```
 
 **Explanation:**
@@ -385,5 +386,109 @@ SQL_PORT=5432
 - **postgres_data volume**: Ensures database data persists between container restarts
 - **Environment variables**: Configure PostgreSQL credentials and Django database connection
 - **SQL_HOST=db**: The hostname matches the service name in docker-compose.yml
+
+### Step 10: Update Django Database Configuration
+
+Update the `DATABASES` dict in `hello_django/hello_django/settings.py`:
+
+```python
+DATABASES = {
+    "default": {
+        "ENGINE": os.environ.get("SQL_ENGINE", "django.db.backends.sqlite3"),
+        "NAME": os.environ.get("SQL_DATABASE", BASE_DIR / "db.sqlite3"),
+        "USER": os.environ.get("SQL_USER", "user"),
+        "PASSWORD": os.environ.get("SQL_PASSWORD", "password"),
+        "HOST": os.environ.get("SQL_HOST", "localhost"),
+        "PORT": os.environ.get("SQL_PORT", "5432"),
+    }
+}
+```
+
+Here, the database is configured based on the environment variables that we just defined. Take note of the default values.
+
+### Step 11: Build and Run Migrations
+
+Build the new image and spin up the two containers:
+
+```bash
+docker-compose up -d --build
+```
+
+Run the migrations:
+
+```bash
+docker-compose exec web python manage.py migrate --noinput
+```
+
+### Step 12: Create Entrypoint Script
+
+Next, add an `entrypoint.sh` file to the "app" directory to verify that Postgres is healthy before applying the migrations and running the Django development server:
+
+Create `hello_django/entrypoint.sh`:
+
+```bash
+#!/bin/sh
+
+if [ "$DATABASE" = "postgres" ]
+then
+    echo "Waiting for postgres..."
+
+    while ! nc -z $SQL_HOST $SQL_PORT; do
+      sleep 0.1
+    done
+
+    echo "PostgreSQL started"
+fi
+
+python manage.py flush --no-input
+python manage.py migrate
+
+exec "$@"
+```
+
+Update the file permissions locally:
+
+```bash
+chmod +x hello_django/entrypoint.sh
+```
+
+### Step 13: Update Dockerfile to Use Entrypoint
+
+Then, update the Dockerfile to copy over the entrypoint.sh file and run it as the Docker entrypoint command. 
+
+Update `hello_django/Dockerfile`:
+
+```dockerfile
+# Pull official base image
+FROM python:3.12-alpine
+
+# Set work directory
+WORKDIR /usr/src/app
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE 1
+ENV PYTHONUNBUFFERED 1
+
+# Install dependencies
+COPY ./requirements.txt .
+RUN pip install --upgrade pip
+RUN pip install -r requirements.txt
+
+# Copy entrypoint.sh
+COPY ./entrypoint.sh .
+RUN sed -i 's/\r$//g' /usr/src/app/entrypoint.sh
+RUN chmod +x /usr/src/app/entrypoint.sh
+
+# Copy project
+COPY . .
+
+# Run entrypoint.sh
+ENTRYPOINT ["/usr/src/app/entrypoint.sh"]
+```
+
+**Explanation:**
+- The `sed` command handles Windows line ending issues (CRLF to LF conversion)
+- The `chmod` command ensures the script is executable
+- The `ENTRYPOINT` directive runs the entrypoint script before starting the Django development server
 
 
