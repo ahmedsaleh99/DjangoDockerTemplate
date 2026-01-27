@@ -223,8 +223,7 @@ touch docker-compose.yml
 Add the following content to `docker-compose.yml`:
 
 ```yaml
-version: '3.8'
-
+# dev environment docker compose
 services:
   web:
     build: ./app
