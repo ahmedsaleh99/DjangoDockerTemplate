@@ -464,8 +464,12 @@ docker-compose run --rm certbot certonly --webroot -w /var/www/certbot -d your_d
 # Check certificate expiry
 docker-compose exec nginx openssl x509 -in /etc/letsencrypt/live/your_domain.com/cert.pem -noout -dates
 
-# Renew certificate
-docker-compose run --rm certbot renew --force-renewal
+# Renew certificate (automatic renewal should handle this)
+docker-compose run --rm certbot renew
+
+# Force renewal only if necessary (be aware of Let's Encrypt rate limits)
+# Rate limit: 5 duplicate certificates per week
+# docker-compose run --rm certbot renew --force-renewal
 
 # Reload Nginx
 docker-compose exec nginx nginx -s reload

@@ -192,9 +192,17 @@ Create `init-letsencrypt.sh` script:
 ```bash
 #!/bin/bash
 
-if ! [ -x "$(command -v docker-compose)" ]; then
-  echo 'Error: docker-compose is not installed.' >&2
+# Check for docker-compose (legacy) or docker compose (modern)
+if ! [ -x "$(command -v docker-compose)" ] && ! command -v docker &> /dev/null; then
+  echo 'Error: docker-compose or docker compose is not installed.' >&2
   exit 1
+fi
+
+# Use appropriate command
+if [ -x "$(command -v docker-compose)" ]; then
+  DOCKER_COMPOSE="docker-compose"
+else
+  DOCKER_COMPOSE="docker compose"
 fi
 
 domains=(your_domain.com www.your_domain.com)

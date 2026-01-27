@@ -66,6 +66,12 @@ psycopg2-binary==2.9.9
 gunicorn==21.2.0
 ```
 
+**Note**: For production projects, consider using a two-file approach:
+- `requirements.in` - Minimal dependencies without versions
+- `requirements.txt` - Fully pinned dependencies (use `pip-compile` from `pip-tools`)
+
+This ensures reproducible builds while making it easy to update dependencies.
+
 ### 4. Dockerfile for Development
 
 Create `Dockerfile`:
