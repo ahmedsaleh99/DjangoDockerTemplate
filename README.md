@@ -135,4 +135,52 @@ python manage.py runserver
 
 Press `Ctrl+C` to stop the development server.
 
+### Step 5: Create Dockerfile
+
+Now let's dockerize the application by creating a Dockerfile in the `hello_django` directory:
+
+```bash
+# Navigate to the hello_django directory (if not already there)
+cd hello_django
+```
+
+Create a file named `Dockerfile` with the following content:
+
+```dockerfile
+# Pull official base image
+FROM python:3.12-alpine
+
+# Set work directory
+WORKDIR /app
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Install dependencies
+COPY requirements.txt /app/
+RUN pip install --upgrade pip
+RUN pip install -r requirements.txt
+
+# Copy project
+COPY . /app/
+```
+
+After creating the Dockerfile, your directory structure should look like this:
+
+```
+DjangoDockerTemplate/
+├── venv/                         # Virtual environment (do NOT commit to git)
+└── hello_django/                 # Django project root
+    ├── Dockerfile                # Docker configuration (NEW)
+    ├── manage.py                 # Django management script
+    ├── requirements.txt          # Python dependencies
+    └── hello_django/             # Django project package
+        ├── __init__.py
+        ├── asgi.py
+        ├── settings.py           # Project settings
+        ├── urls.py               # URL configuration
+        └── wsgi.py               # WSGI configuration
+```
+
 
