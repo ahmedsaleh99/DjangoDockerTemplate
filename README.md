@@ -2,6 +2,8 @@
 
 A production-ready Django application template with Docker, PostgreSQL, Gunicorn, and Nginx. This template is designed for containerized development and deployment with automated SSL certificate management using Step CA as a private ACME server.
 
+![System Architecture](docs/images/system_architecture.svg)
+
 ## Features
 
 - 🐳 **Docker & Docker Compose** - Fully containerized application stack
