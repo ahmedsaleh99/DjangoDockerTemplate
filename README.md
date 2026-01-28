@@ -209,7 +209,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Acknowledgments
 
-- Inspired by [testdriven.io's Django Docker tutorial](https://testdriven.io/blog/dockerizing-django-with-postgres-gunicorn-and-nginx/)
-- Uses [nginx-proxy](https://github.com/nginx-proxy/nginx-proxy) for automatic Nginx configuration
-- Uses [acme-companion](https://github.com/nginx-proxy/acme-companion) for automatic SSL certificates
-- Uses [Step CA](https://github.com/smallstep/certificates) as a private ACME server
+This template is based on best practices from:
+- [TestDriven.io - Dockerizing Django with Postgres, Gunicorn, and Nginx](https://testdriven.io/blog/dockerizing-django-with-postgres-gunicorn-and-nginx/)
+- [TestDriven.io - Django with Let's Encrypt](https://testdriven.io/blog/django-lets-encrypt/)
+- [TestDriven.io - Docker Best Practices for Python Developers](https://testdriven.io/blog/docker-best-practices/)
+- [SmallStep - Run your own private CA & ACME server using step-ca](https://smallstep.com/blog/private-acme-server/)
+- [nginx-proxy - Automated Nginx Reverse Proxy for Docker](https://github.com/nginx-proxy/nginx-proxy)
+- [acme-companion - LetsEncrypt companion for nginx-proxy](https://github.com/nginx-proxy/acme-companion)

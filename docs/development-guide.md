@@ -22,8 +22,11 @@ By the end of this guide, you'll have a fully functional, Dockerized Django appl
 mkdir DjangoDockerTemplate # Our empty repo
 cd DjangoDockerTemplate
 
+# you need to install python3.12 first
+# or you can just use python instead of python3.12 
+# with what python version installed in your machine
 # Create virtual environment with Python 3.12
-python3.12 -m venv venv
+python3.12 -m venv venv 
 
 # Activate the virtual environment
 # On Linux/Mac:
@@ -67,7 +70,7 @@ Create a `requirements.txt` file with Django 5:
 ```bash
 touch hello_django/requirements.txt
 ```
-Add the following packages tp `` we will need it later when we dockerize the app.
+Add the following packages to `requirements.txt` we will need it later when we dockerize the app.
 
 ```txt
 django==5.2.10
@@ -97,14 +100,14 @@ Now let's dockerize the application by creating a Dockerfile in the `hello_djang
 
 ```bash
 # Navigate to the hello_django directory (if not already there)
-cd hello_django
 touch Dockerfile
 ```
 
 Add the following content to the `Dockerfile` just created:
 
 ```dockerfile
-FROM python:3.12.12-slim-trixie
+# You may want to choose another image for your real app.
+FROM python:3.12.12-slim-trixie 
 
 ENV APP_HOME=/usr/src/app
 RUN mkdir $APP_HOME
@@ -115,7 +118,9 @@ WORKDIR $APP_HOME
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# install system dependencies
+# install system dependencies netcat-openbsd
+# later nc command will be used to check if postgress db is up and running
+# before the our app starts
 RUN apt-get update \
     && apt-get install -y --no-install-recommends netcat-openbsd \
     && rm -rf /var/lib/apt/lists/* \
@@ -126,7 +131,7 @@ COPY ./requirements.txt .
 RUN pip install --upgrade pip \
     && pip install -r requirements.txt
 
-# copy project
+# copy project files to current working dir
 COPY . .
 
 ```
@@ -308,7 +313,7 @@ services:
       - 8000:8000
     env_file:
       - ./.env.dev
-  
+
   db:
     image: postgres:18.1-trixie
     volumes:
