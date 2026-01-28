@@ -69,11 +69,11 @@ For detailed step-by-step guides, see the following documentation:
 | Component | Version |
 |-----------|---------|
 | Python | 3.12 |
-| Django | 5.0 |
+| Django | 5.2.10 |
 | PostgreSQL | 18.1-trixie |
 | Nginx | 1.27-alpine |
-| Gunicorn | 21.2.0 |
-| psycopg2-binary | 2.9.9 |
+| Gunicorn | 24.1.1 |
+| psycopg2-binary | 2.9.11 |
 | Step CA | latest |
 | nginx-proxy | 1.27-alpine |
 | acme-companion | 2.6 |

@@ -11,7 +11,8 @@ then
     echo "PostgreSQL started"
 fi
 
-python manage.py migrate --noinput
+# Run migrations manually in production; left commented out for manual control.
+# python manage.py migrate --noinput
 python manage.py collectstatic --no-input --clear
 
 exec "$@"
