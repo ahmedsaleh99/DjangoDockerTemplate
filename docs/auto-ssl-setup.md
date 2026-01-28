@@ -218,6 +218,181 @@ POSTGRES_DB=hello_django_staging
 - **`HTTPS_METHOD`**: Set to `redirect` to force HTTP → HTTPS redirection
 - **`DOMAIN`**: Your staging domain (e.g., staging.yourdomain.local)
 
+### Staging Docker Compose Configuration
+
+The `docker-compose.staging.yml` file orchestrates all services for the staging environment with automatic SSL:
+
+**`docker-compose.staging.yml`:**
+
+```yaml
+services:
+  web:
+    build:
+      context: ./hello_django
+      dockerfile: Dockerfile.prod
+    command: gunicorn hello_django.wsgi:application --bind 0.0.0.0:8000
+    volumes:
+      - static_volume:/home/app/web/staticfiles
+      - media_volume:/home/app/web/mediafiles
+    expose:
+      - 8000
+    env_file:
+      - ./.env.staging
+    depends_on:
+      - db
+  
+  db:
+    image: postgres:18.1-trixie
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    env_file:
+      - ./.env.staging.db
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  nginx-proxy:
+    container_name: nginx-proxy
+    build: ./nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes_from:
+      - web
+    volumes:
+      - vhost:/etc/nginx/vhost.d
+      - conf:/etc/nginx/conf.d
+      - html:/usr/share/nginx/html
+      - certs:/etc/nginx/certs:ro
+    depends_on:
+      - web
+
+  docker-gen:
+    image: nginxproxy/docker-gen
+    container_name: nginx-proxy-gen
+    command: -notify-sighup nginx-proxy -watch -wait 5s:30s /etc/docker-gen/templates/nginx.tmpl /etc/nginx/conf.d/default.conf
+    volumes_from:
+      - nginx-proxy
+    volumes:
+      - ./nginx/nginx.tmpl:/etc/docker-gen/templates/nginx.tmpl:ro
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+    depends_on:
+      - nginx-proxy
+
+  acme-companion:
+    image: nginxproxy/acme-companion:2.6
+    container_name: nginx-proxy-acme
+    environment:
+      - NGINX_PROXY_CONTAINER=nginx-proxy-gen
+      - DEFAULT_EMAIL=test@test.com
+      - ACME_CA_URI=https://step-ca:9000/acme/acme/directory
+      - CA_BUNDLE=/home/step/certs/root_ca.crt
+    volumes_from:
+      - nginx-proxy
+    volumes:
+      - certs:/etc/nginx/certs:rw
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - acme:/etc/acme.sh
+      - step-data:/home/step:ro
+    depends_on:
+      - nginx-proxy
+      - step-ca
+
+  step-ca:
+    image: smallstep/step-ca:latest
+    container_name: step-ca
+    restart: always
+    environment:
+      - DOCKER_STEPCA_INIT_NAME=Smallstep
+      - DOCKER_STEPCA_INIT_DNS_NAMES=localhost,step-ca
+      - DOCKER_STEPCA_INIT_REMOTE_MANAGEMENT=true
+      - DOCKER_STEPCA_INIT_ACME=true
+    volumes:
+      - step-data:/home/step
+    ports:
+      - "9000:9000"
+
+volumes:
+  step-data:
+  postgres_data:
+  static_volume:
+  media_volume:
+  certs:
+  html:
+  vhost:
+  conf:
+  acme:
+```
+
+### Services Explained
+
+#### `web` Service
+**Role:** Django application with Gunicorn WSGI server
+- **`build`**: Builds from production Dockerfile for optimized image
+- **`command`**: Runs Gunicorn with 4 workers binding to port 8000
+- **`volumes`**: Shares static and media files with nginx-proxy
+- **`expose`**: Makes port 8000 available only to linked containers (not to host)
+- **`env_file`**: Loads environment variables from .env.staging
+- **`depends_on`**: Ensures database starts before web application
+
+#### `db` Service
+**Role:** PostgreSQL database with persistent storage
+- **`image`**: Official PostgreSQL 18.1-trixie image
+- **`volumes`**: Persists database data across container restarts
+- **`env_file`**: Loads database credentials from .env.staging.db
+- **`healthcheck`**: Monitors database readiness for dependent services
+
+#### `nginx-proxy` Service
+**Role:** Automated reverse proxy that auto-configures based on container environment variables
+- **`build`**: Custom Nginx image with vhost.d and custom.conf
+- **`restart`**: Always restarts on failure for high availability
+- **`ports`**: Exposes ports 80 (HTTP) and 443 (HTTPS) to host
+- **`volumes_from`**: Inherits volumes from web container (static/media)
+- **`volumes`**: Stores SSL certs, vhost configs, and HTML content
+- **`certs:ro`**: Read-only access to certificates (written by acme-companion)
+
+#### `docker-gen` Service
+**Role:** Watches Docker containers and regenerates Nginx configuration dynamically
+- **`image`**: Official nginxproxy/docker-gen image
+- **`command`**: 
+  - `-notify-sighup nginx-proxy`: Sends reload signal to Nginx when config changes
+  - `-watch`: Continuously monitors Docker events
+  - `-wait 5s:30s`: Waits 5s minimum, 30s maximum before regenerating config
+  - Generates `default.conf` from `nginx.tmpl` template
+- **`volumes`**: 
+  - Shares volumes with nginx-proxy for config updates
+  - Mounts nginx.tmpl template for config generation
+  - Mounts Docker socket to watch container changes
+
+#### `acme-companion` Service
+**Role:** Automatic SSL certificate issuance and renewal via ACME protocol
+- **`image`**: nginxproxy/acme-companion:2.6 for certificate automation
+- **`environment`**:
+  - `NGINX_PROXY_CONTAINER`: Points to docker-gen container for coordination
+  - `DEFAULT_EMAIL`: Email for certificate expiration notifications
+  - `ACME_CA_URI`: Step CA ACME server URL (private CA)
+  - `CA_BUNDLE`: Path to Step CA root certificate for trust
+- **`volumes`**:
+  - `certs:rw`: Read-write access to store issued certificates
+  - Docker socket: Monitors containers for LETSENCRYPT_* variables
+  - `acme`: Stores acme.sh client data and account keys
+  - `step-data:ro`: Read-only access to Step CA certificates
+
+#### `step-ca` Service
+**Role:** Private ACME Certificate Authority (eliminates need for public domain)
+- **`image`**: Official Smallstep Step CA image
+- **`restart`**: Always restarts to ensure CA availability
+- **`environment`**:
+  - `DOCKER_STEPCA_INIT_NAME`: CA name (Smallstep)
+  - `DOCKER_STEPCA_INIT_DNS_NAMES`: DNS names for CA access
+  - `DOCKER_STEPCA_INIT_REMOTE_MANAGEMENT`: Enables API management
+  - `DOCKER_STEPCA_INIT_ACME`: Enables ACME protocol support
+- **`volumes`**: Persists CA keys, certificates, and configuration
+- **`ports`**: Exposes port 9000 for ACME protocol and management
+
 ### Building and Running Staging
 
 **Build and start all services:**
@@ -357,6 +532,140 @@ VIRTUAL_HOST=${DOMAIN}
 VIRTUAL_PORT=8000
 HTTPS_METHOD=redirect
 ```
+
+### Production Docker Compose Configuration
+
+The `docker-compose.prod.yml` file is similar to staging but configured for production use:
+
+**`docker-compose.prod.yml`:**
+
+```yaml
+services:
+  web:
+    build:
+      context: ./hello_django
+      dockerfile: Dockerfile.prod
+    command: gunicorn hello_django.wsgi:application --bind 0.0.0.0:8000
+    volumes:
+      - static_volume:/home/app/web/staticfiles
+      - media_volume:/home/app/web/mediafiles
+    expose:
+      - 8000
+    env_file:
+      - ./.env.prod
+    depends_on:
+      - db
+  
+  db:
+    image: postgres:18.1-trixie
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    env_file:
+      - ./.env.prod.db
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  nginx-proxy:
+    container_name: nginx-proxy
+    build: ./nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes_from:
+      - web
+    volumes:
+      - vhost:/etc/nginx/vhost.d
+      - conf:/etc/nginx/conf.d
+      - html:/usr/share/nginx/html
+      - certs:/etc/nginx/certs:ro
+    depends_on:
+      - web
+
+  docker-gen:
+    image: nginxproxy/docker-gen
+    container_name: nginx-proxy-gen
+    command: -notify-sighup nginx-proxy -watch -wait 5s:30s /etc/docker-gen/templates/nginx.tmpl /etc/nginx/conf.d/default.conf
+    volumes_from:
+      - nginx-proxy
+    volumes:
+      - ./nginx/nginx.tmpl:/etc/docker-gen/templates/nginx.tmpl:ro
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+    depends_on:
+      - nginx-proxy
+
+  acme-companion:
+    image: nginxproxy/acme-companion:2.6
+    container_name: nginx-proxy-acme
+    environment:
+      - NGINX_PROXY_CONTAINER=nginx-proxy-gen
+      - DEFAULT_EMAIL=prod@prod.com
+      # Replace ACME_CA_URI with your CA URL if not using self-hosted CA
+      - ACME_CA_URI=https://step-ca:9000/acme/acme/directory
+      # Remove CA_BUNDLE line if not using self-hosted CA
+      - CA_BUNDLE=/home/step/certs/root_ca.crt
+    volumes_from:
+      - nginx-proxy
+    volumes:
+      - certs:/etc/nginx/certs:rw
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - acme:/etc/acme.sh
+      - step-data:/home/step:ro
+    depends_on:
+      - nginx-proxy
+      - step-ca
+
+  # Remove step-ca service if not using self-hosted CA
+  step-ca:
+    image: smallstep/step-ca:latest
+    container_name: step-ca
+    restart: always
+    environment:
+      - DOCKER_STEPCA_INIT_NAME=Smallstep
+      - DOCKER_STEPCA_INIT_DNS_NAMES=localhost,step-ca
+      - DOCKER_STEPCA_INIT_REMOTE_MANAGEMENT=true
+      - DOCKER_STEPCA_INIT_ACME=true
+    volumes:
+      - step-data:/home/step
+    ports:
+      - "9000:9000"
+
+volumes:
+  step-data:
+  postgres_data:
+  static_volume:
+  media_volume:
+  certs:
+  html:
+  vhost:
+  conf:
+  acme:
+```
+
+### Production Services Configuration
+
+The production configuration uses the same services as staging with these key differences:
+
+#### Production-Specific Environment Files
+- **`.env.prod`**: Production Django settings (DEBUG=0, production SECRET_KEY)
+- **`.env.prod.db`**: Production database credentials
+
+#### Service Differences from Staging
+
+**`acme-companion` Service (Production)**
+- **`DEFAULT_EMAIL`**: Set to production email for certificate notifications
+- **`ACME_CA_URI`**: Can be switched to Let's Encrypt by removing this line
+- **`CA_BUNDLE`**: Optional - remove if using public CA like Let's Encrypt
+
+**Comments in Production File:**
+- Includes guidance for switching between self-hosted Step CA and public CA
+- Shows which lines to remove/modify for Let's Encrypt integration
+- Security reminders for SECRET_KEY and database passwords
+
+All other services (`web`, `db`, `nginx-proxy`, `docker-gen`, `step-ca`) function identically to staging but use production environment variables and credentials.
 
 ### Certificate Authority Options
 
